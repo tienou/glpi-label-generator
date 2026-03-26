@@ -267,17 +267,15 @@ def draw_label(c, x, y, a, logo_path, tape="36mm", color_mode="bw", owner=""):
             if pil_img.mode != "RGBA":
                 pil_img = pil_img.convert("RGBA")
             if inverse and is_mono:
-                # Inverse mono: pure white logo on black background
+                # Inverse mono: force all non-transparent pixels to pure white
                 r, g, b, alpha = pil_img.split()
-                gray = PILImage.merge("RGB", (r, g, b)).convert("L")
-                bw = gray.point(lambda p: 255 if p < 128 else 0)  # Invert + threshold
-                pil_img = PILImage.merge("RGBA", (bw, bw, bw, alpha))
+                white = PILImage.new("L", pil_img.size, 255)
+                pil_img = PILImage.merge("RGBA", (white, white, white, alpha))
             elif inverse:
-                # Inverse: grayscale inverted
+                # Inverse: force all non-transparent pixels to pure white
                 r, g, b, alpha = pil_img.split()
-                gray = PILImage.merge("RGB", (r, g, b)).convert("L")
-                inv_gray = ImageOps.invert(gray)
-                pil_img = PILImage.merge("RGBA", (inv_gray, inv_gray, inv_gray, alpha))
+                white = PILImage.new("L", pil_img.size, 255)
+                pil_img = PILImage.merge("RGBA", (white, white, white, alpha))
             elif is_mono:
                 # Mono: pure black logo on white background
                 r, g, b, alpha = pil_img.split()
