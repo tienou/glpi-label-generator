@@ -214,7 +214,7 @@ def draw_label(c, x, y, a, logo_path, tape="36mm", color=False):
 
     c.setStrokeColor(HexColor("#CCCCCC"))
     c.setLineWidth(0.5)
-    c.roundRect(x, y, lw, lh, 2*mm)
+    c.rect(x, y, lw, lh)
 
     sx = x + 3*mm + qs + 2*mm
     c.setStrokeColor(HexColor("#E0E0E0"))
