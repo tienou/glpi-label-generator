@@ -31,7 +31,8 @@ def get_app_dir():
         return os.path.dirname(sys.executable)
     return os.path.dirname(os.path.abspath(__file__))
 
-CONFIG_PATH = os.path.join(get_config_dir(), "glpi_config.json")
+CONFIG_DIR = get_config_dir()
+CONFIG_PATH = os.path.join(CONFIG_DIR, "glpi_config.json")
 
 # === LABEL LAYOUTS PER TAPE SIZE ===
 TAPE_SIZES = {
