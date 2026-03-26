@@ -122,6 +122,7 @@ T = {
     "color_mode_label": {"fr": "Couleur :", "en": "Color:", "es": "Color:", "de": "Farbe:"},
     "color_bw":         {"fr": "Noir & Blanc", "en": "Black & White", "es": "Blanco y Negro", "de": "Schwarz & Weiss"},
     "color_color":      {"fr": "Couleur", "en": "Color", "es": "Color", "de": "Farbe"},
+    "color_inverse":    {"fr": "Inverse (blanc sur noir)", "en": "Inverse (white on black)", "es": "Inverso (blanco sobre negro)", "de": "Invertiert (weiss auf schwarz)"},
     "owner_label":      {"fr": "Propriete de :", "en": "Property of:", "es": "Propiedad de:", "de": "Eigentum von:"},
     "owner_placeholder":{"fr": "ex: Groupe Genesienne", "en": "e.g. My Company", "es": "ej: Mi Empresa", "de": "z.B. Meine Firma"},
     "owner_prefix":     {"fr": "Propriete de :", "en": "Property of:", "es": "Propiedad de:", "de": "Eigentum von:"},
@@ -140,7 +141,7 @@ def _migrate_old_config():
 
 def load_config():
     _migrate_old_config()
-    defaults = {"glpi_url": "", "app_token": "", "user_token": "", "logo_path": "", "lang": "fr", "tape_size": "36mm", "color": False, "owner": ""}
+    defaults = {"glpi_url": "", "app_token": "", "user_token": "", "logo_path": "", "lang": "fr", "tape_size": "36mm", "color_mode": "bw", "owner": ""}
     if os.path.exists(CONFIG_PATH):
         try:
             with open(CONFIG_PATH, "r") as f:
@@ -198,100 +199,118 @@ class GLPI:
         self.session.close()
 
 # === QR CODE ===
-def make_qr(url):
+def make_qr(url, inverse=False):
     q = qrcode.QRCode(error_correction=qrcode.constants.ERROR_CORRECT_M, box_size=10, border=1)
     q.add_data(url)
     q.make(fit=True)
-    img = q.make_image(fill_color="black", back_color="white").resize((300, 300))
+    fill = "white" if inverse else "black"
+    back = "black" if inverse else "white"
+    img = q.make_image(fill_color=fill, back_color=back).resize((300, 300))
     buf = io.BytesIO()
     img.save(buf, format="PNG")
     buf.seek(0)
     return ImageReader(buf)
 
 # === DRAW LABEL ===
-def draw_label(c, x, y, a, logo_path, tape="36mm", color=False, owner=""):
+def draw_label(c, x, y, a, logo_path, tape="36mm", color_mode="bw", owner=""):
     ts = TAPE_SIZES.get(tape, TAPE_SIZES["36mm"])
     lw = ts["label_w"] * mm
     lh = ts["label_h"] * mm
     qs = ts["qr_size"] * mm
+    inverse = color_mode == "inverse"
+    is_color = color_mode == "color"
 
-    c.setStrokeColor(HexColor("#CCCCCC"))
+    # Background fill for inverse mode
+    if inverse:
+        c.setFillColor(HexColor("#000000"))
+        c.rect(x, y, lw, lh, fill=1, stroke=0)
+        c.setStrokeColor(HexColor("#333333"))
+    else:
+        c.setStrokeColor(HexColor("#CCCCCC"))
     c.setLineWidth(0.5)
     c.rect(x, y, lw, lh)
 
     sx = x + 3*mm + qs + 2*mm
-    c.setStrokeColor(HexColor("#E0E0E0"))
+    c.setStrokeColor(HexColor("#444444") if inverse else HexColor("#E0E0E0"))
     c.setLineWidth(0.3)
     c.line(sx, y+3*mm, sx, y+lh-3*mm)
 
-    c.drawImage(make_qr(a["url"]), x+3*mm, y+(lh-qs)/2, qs, qs)
+    c.drawImage(make_qr(a["url"], inverse=inverse), x+3*mm, y+(lh-qs)/2, qs, qs)
 
     tx = sx + 3*mm
+
+    # Colors for text
+    main_color = HexColor("#FFFFFF") if inverse else HexColor("#000000")
+    sub_color = HexColor("#CCCCCC") if inverse else (HexColor("#666666") if is_color else HexColor("#000000"))
+    sn_color = HexColor("#FFFFFF") if inverse else (HexColor("#333333") if is_color else HexColor("#000000"))
+    loc_color = HexColor("#AAAAAA") if inverse else (HexColor("#1B3A5C") if is_color else HexColor("#000000"))
+    inv_color = HexColor("#888888") if inverse else (HexColor("#999999") if is_color else HexColor("#555555"))
 
     if logo_path and os.path.exists(logo_path):
         lgh = ts["logo_h"] * mm
         lgw = lgh * 2000/1444
-        if not color:
-            # Convert logo to grayscale for B&W mode
-            from PIL import Image as PILImage
-            pil_img = PILImage.open(logo_path).convert("L").convert("RGB")
-            buf_logo = io.BytesIO()
-            pil_img.save(buf_logo, format="PNG")
-            buf_logo.seek(0)
-            logo_img = ImageReader(buf_logo)
-        else:
-            logo_img = logo_path
+        from PIL import Image as PILImage, ImageOps
+        pil_img = PILImage.open(logo_path).convert("RGBA")
+        if inverse:
+            # Invert RGB channels, keep alpha
+            r, g, b, alpha = pil_img.split()
+            rgb = ImageOps.invert(PILImage.merge("RGB", (r, g, b)))
+            pil_img = PILImage.merge("RGBA", (*rgb.split(), alpha))
+        elif not is_color:
+            # Convert to grayscale, keep alpha
+            r, g, b, alpha = pil_img.split()
+            gray = PILImage.merge("RGB", (r, g, b)).convert("L").convert("RGB")
+            pil_img = PILImage.merge("RGBA", (*gray.split(), alpha))
+        buf_logo = io.BytesIO()
+        pil_img.save(buf_logo, format="PNG")
+        buf_logo.seek(0)
+        logo_img = ImageReader(buf_logo)
         c.drawImage(logo_img, x+lw-lgw-2*mm, y+lh-lgh-1*mm, lgw, lgh,
                     preserveAspectRatio=True, mask="auto")
 
     # Name
     c.setFont("Helvetica-Bold", ts["font_name"])
-    c.setFillColor(HexColor("#000000"))
+    c.setFillColor(main_color)
     max_chars = int(ts["label_w"] * 0.22)
     nm = a["name"][:max_chars]+"..." if len(a["name"]) > max_chars+1 else a["name"]
     c.drawString(tx, y+lh-10*mm, nm)
 
     # Type
     c.setFont("Helvetica", ts["font_type"])
-    c.setFillColor(HexColor("#666666") if color else HexColor("#000000"))
+    c.setFillColor(sub_color)
     c.drawString(tx, y+lh-14*mm, a["type_label"])
 
     # Serial
     c.setFont("Helvetica-Bold", ts["font_sn"])
-    c.setFillColor(HexColor("#333333") if color else HexColor("#000000"))
+    c.setFillColor(sn_color)
     sn = a.get("serial", "N/A") or "N/A"
     c.drawString(tx, y+lh-19.5*mm, f"S/N: {sn[:20]}")
 
     # Location
     loc = a.get("location", "") or ""
     if loc:
-        c.setFont("Helvetica-Oblique" if not color else "Helvetica", ts["font_loc"])
-        c.setFillColor(HexColor("#1B3A5C") if color else HexColor("#000000"))
+        c.setFont("Helvetica-Oblique" if not is_color else "Helvetica", ts["font_loc"])
+        c.setFillColor(loc_color)
         c.drawString(tx, y+lh-24*mm, loc[:20])
 
     # Bottom line: owner and/or inventory number
     bottom_y = y + 3*mm
-    if owner and tape != "25mm":
+    if owner:
         c.setFont("Helvetica-Bold", ts["font_inv"])
-        c.setFillColor(HexColor("#000000"))
-        c.drawString(tx, bottom_y, owner)
-    elif owner and tape == "25mm":
-        c.setFont("Helvetica-Bold", ts["font_inv"])
-        c.setFillColor(HexColor("#000000"))
+        c.setFillColor(main_color)
         c.drawString(tx, bottom_y, owner)
 
     inv = a.get("otherserial", "") or ""
     if inv and tape != "25mm":
         c.setFont("Helvetica", ts["font_inv"])
-        c.setFillColor(HexColor("#999999") if color else HexColor("#555555"))
-        # Push inv to the right if owner is present
+        c.setFillColor(inv_color)
         inv_x = tx if not owner else x + lw - 3*mm - c.stringWidth(f"Inv: {inv}", "Helvetica", ts["font_inv"])
         c.drawString(inv_x, bottom_y, f"Inv: {inv}")
 
     c.setFillColor(HexColor("#000000"))
 
 # === GENERATE PDF ===
-def make_pdf(assets, path, logo_path, tape="36mm", color=False, owner=""):
+def make_pdf(assets, path, logo_path, tape="36mm", color_mode="bw", owner=""):
     ts = TAPE_SIZES.get(tape, TAPE_SIZES["36mm"])
     lw = ts["label_w"] * mm
     lh = ts["label_h"] * mm
@@ -307,7 +326,7 @@ def make_pdf(assets, path, logo_path, tape="36mm", color=False, owner=""):
         if i > 0 and pi == 0:
             c.showPage()
         col, row = pi % cols, pi // cols
-        draw_label(c, MARGIN_X + col*lw, ph - MARGIN_Y - (row+1)*(lh+GAP_Y), a, logo_path, tape, color, owner)
+        draw_label(c, MARGIN_X + col*lw, ph - MARGIN_Y - (row+1)*(lh+GAP_Y), a, logo_path, tape, color_mode, owner)
     c.save()
     return len(assets)
 
@@ -550,9 +569,16 @@ class App(ctk.CTk):
 
         # Color mode
         ctk.CTkLabel(grid, text=self.t("color_mode_label")).grid(row=5, column=0, sticky="w", pady=6)
-        color_values = [self.t("color_bw"), self.t("color_color")]
-        combo_color = ctk.CTkComboBox(grid, values=color_values, state="readonly", width=180)
-        combo_color.set(self.t("color_color") if self.cfg.get("color", False) else self.t("color_bw"))
+        color_values = [self.t("color_bw"), self.t("color_color"), self.t("color_inverse")]
+        color_map = {"bw": self.t("color_bw"), "color": self.t("color_color"), "inverse": self.t("color_inverse")}
+        # Backward compat: old bool config
+        old_color = self.cfg.get("color")
+        if isinstance(old_color, bool):
+            current_mode = "color" if old_color else "bw"
+        else:
+            current_mode = self.cfg.get("color_mode", "bw")
+        combo_color = ctk.CTkComboBox(grid, values=color_values, state="readonly", width=250)
+        combo_color.set(color_map.get(current_mode, self.t("color_bw")))
         combo_color.grid(row=5, column=1, sticky="w", padx=(10, 0), pady=6)
 
         # Owner text
@@ -578,7 +604,9 @@ class App(ctk.CTk):
 
         def do_save():
             new_lang = LANGS.get(combo_lang.get(), "fr")
-            is_color = combo_color.get() == self.t("color_color")
+            # Resolve color mode from combo
+            rev_map = {self.t("color_bw"): "bw", self.t("color_color"): "color", self.t("color_inverse"): "inverse"}
+            sel_mode = rev_map.get(combo_color.get(), "bw")
             self.cfg = {
                 "glpi_url": e_url.get().strip().rstrip("/"),
                 "app_token": e_app.get().strip(),
@@ -586,7 +614,7 @@ class App(ctk.CTk):
                 "logo_path": e_logo.get().strip(),
                 "lang": new_lang,
                 "tape_size": combo_tape.get(),
-                "color": is_color,
+                "color_mode": sel_mode,
                 "owner": e_owner.get().strip(),
             }
             save_config(self.cfg)
@@ -783,10 +811,15 @@ class App(ctk.CTk):
                 logo = cfg.get("logo_path", "")
                 self._log(f"\n{self.t('pdf_generating')} {len(self.assets)} {self.t('labels')}...")
                 tape = cfg.get("tape_size", "36mm")
-                color = cfg.get("color", False)
+                # Backward compat: old bool config
+                old_color = cfg.get("color")
+                if isinstance(old_color, bool):
+                    color_mode = "color" if old_color else "bw"
+                else:
+                    color_mode = cfg.get("color_mode", "bw")
                 raw_owner = cfg.get("owner", "")
                 owner = f"{self.t('owner_prefix')} {raw_owner}" if raw_owner else ""
-                make_pdf(self.assets, path, logo, tape, color, owner)
+                make_pdf(self.assets, path, logo, tape, color_mode, owner)
                 self._log(f"{self.t('pdf_saved')} {path}")
                 self.after(0, lambda: self.lbl_count.configure(
                     text=f"{len(self.assets)} {self.t('labels_generated')}"))
