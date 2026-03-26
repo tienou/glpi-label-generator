@@ -738,8 +738,8 @@ class App(ctk.CTk):
                 self._display_assets(self.assets)
 
                 # Generate to temp file and open directly
-                import tempfile
-                path = os.path.join(tempfile.gettempdir(), "glpi_etiquettes.pdf")
+                import tempfile, time
+                path = os.path.join(tempfile.gettempdir(), f"glpi_etiquettes_{int(time.time())}.pdf")
                 cfg = self._get_config_from_ui()
                 logo = cfg.get("logo_path", "")
                 self._log(f"\n{self.t('pdf_generating')} {len(self.assets)} {self.t('labels')}...")
