@@ -122,6 +122,8 @@ T = {
     "color_mode_label": {"fr": "Couleur :", "en": "Color:", "es": "Color:", "de": "Farbe:"},
     "color_bw":         {"fr": "Noir & Blanc", "en": "Black & White", "es": "Blanco y Negro", "de": "Schwarz & Weiss"},
     "color_color":      {"fr": "Couleur", "en": "Color", "es": "Color", "de": "Farbe"},
+    "owner_label":      {"fr": "Propriete de :", "en": "Property of:", "es": "Propiedad de:", "de": "Eigentum von:"},
+    "owner_placeholder":{"fr": "ex: Groupe Genesienne", "en": "e.g. My Company", "es": "ej: Mi Empresa", "de": "z.B. Meine Firma"},
 }
 
 # === CONFIG ===
@@ -137,7 +139,7 @@ def _migrate_old_config():
 
 def load_config():
     _migrate_old_config()
-    defaults = {"glpi_url": "", "app_token": "", "user_token": "", "logo_path": "", "lang": "fr", "tape_size": "36mm", "color": False}
+    defaults = {"glpi_url": "", "app_token": "", "user_token": "", "logo_path": "", "lang": "fr", "tape_size": "36mm", "color": False, "owner": ""}
     if os.path.exists(CONFIG_PATH):
         try:
             with open(CONFIG_PATH, "r") as f:
@@ -206,7 +208,7 @@ def make_qr(url):
     return ImageReader(buf)
 
 # === DRAW LABEL ===
-def draw_label(c, x, y, a, logo_path, tape="36mm", color=False):
+def draw_label(c, x, y, a, logo_path, tape="36mm", color=False, owner=""):
     ts = TAPE_SIZES.get(tape, TAPE_SIZES["36mm"])
     lw = ts["label_w"] * mm
     lh = ts["label_h"] * mm
@@ -256,17 +258,29 @@ def draw_label(c, x, y, a, logo_path, tape="36mm", color=False):
         c.setFillColor(HexColor("#1B3A5C") if color else HexColor("#000000"))
         c.drawString(tx, y+lh-24*mm, loc[:20])
 
-    # Inventory number (skip on 25mm - not enough space)
+    # Bottom line: owner and/or inventory number
+    bottom_y = y + 3*mm
+    if owner and tape != "25mm":
+        c.setFont("Helvetica-Bold", ts["font_inv"])
+        c.setFillColor(HexColor("#000000"))
+        c.drawString(tx, bottom_y, owner)
+    elif owner and tape == "25mm":
+        c.setFont("Helvetica-Bold", ts["font_inv"])
+        c.setFillColor(HexColor("#000000"))
+        c.drawString(tx, bottom_y, owner)
+
     inv = a.get("otherserial", "") or ""
     if inv and tape != "25mm":
         c.setFont("Helvetica", ts["font_inv"])
         c.setFillColor(HexColor("#999999") if color else HexColor("#555555"))
-        c.drawString(tx, y+3*mm, f"Inv: {inv}")
+        # Push inv to the right if owner is present
+        inv_x = tx if not owner else x + lw - 3*mm - c.stringWidth(f"Inv: {inv}", "Helvetica", ts["font_inv"])
+        c.drawString(inv_x, bottom_y, f"Inv: {inv}")
 
     c.setFillColor(HexColor("#000000"))
 
 # === GENERATE PDF ===
-def make_pdf(assets, path, logo_path, tape="36mm", color=False):
+def make_pdf(assets, path, logo_path, tape="36mm", color=False, owner=""):
     ts = TAPE_SIZES.get(tape, TAPE_SIZES["36mm"])
     lw = ts["label_w"] * mm
     lh = ts["label_h"] * mm
@@ -282,7 +296,7 @@ def make_pdf(assets, path, logo_path, tape="36mm", color=False):
         if i > 0 and pi == 0:
             c.showPage()
         col, row = pi % cols, pi // cols
-        draw_label(c, MARGIN_X + col*lw, ph - MARGIN_Y - (row+1)*(lh+GAP_Y), a, logo_path, tape, color)
+        draw_label(c, MARGIN_X + col*lw, ph - MARGIN_Y - (row+1)*(lh+GAP_Y), a, logo_path, tape, color, owner)
     c.save()
     return len(assets)
 
@@ -468,7 +482,7 @@ class App(ctk.CTk):
         """Open settings in a separate window."""
         win = ctk.CTkToplevel(self)
         win.title(self.t("settings_title"))
-        win.geometry("550x520")
+        win.geometry("550x560")
         win.resizable(False, False)
         win.transient(self)
         win.grab_set()
@@ -476,7 +490,7 @@ class App(ctk.CTk):
         # Center on parent
         win.update_idletasks()
         x = self.winfo_x() + (self.winfo_width() - 550) // 2
-        y = self.winfo_y() + (self.winfo_height() - 520) // 2
+        y = self.winfo_y() + (self.winfo_height() - 560) // 2
         win.geometry(f"+{x}+{y}")
 
         ctk.CTkLabel(win, text=self.t("glpi_config"),
@@ -530,13 +544,19 @@ class App(ctk.CTk):
         combo_color.set(self.t("color_color") if self.cfg.get("color", False) else self.t("color_bw"))
         combo_color.grid(row=5, column=1, sticky="w", padx=(10, 0), pady=6)
 
+        # Owner text
+        ctk.CTkLabel(grid, text=self.t("owner_label")).grid(row=6, column=0, sticky="w", pady=6)
+        e_owner = ctk.CTkEntry(grid, placeholder_text=self.t("owner_placeholder"))
+        e_owner.grid(row=6, column=1, sticky="ew", padx=(10, 0), pady=6, columnspan=2)
+        e_owner.insert(0, self.cfg.get("owner", ""))
+
         # Language selector
-        ctk.CTkLabel(grid, text=self.t("language_label")).grid(row=6, column=0, sticky="w", pady=6)
+        ctk.CTkLabel(grid, text=self.t("language_label")).grid(row=7, column=0, sticky="w", pady=6)
         lang_names = list(LANGS.keys())
         combo_lang = ctk.CTkComboBox(grid, values=lang_names, state="readonly", width=180)
         current_name = next((k for k, v in LANGS.items() if v == self.lang), "Francais")
         combo_lang.set(current_name)
-        combo_lang.grid(row=6, column=1, sticky="w", padx=(10, 0), pady=6)
+        combo_lang.grid(row=7, column=1, sticky="w", padx=(10, 0), pady=6)
 
         # Buttons
         btn_frame = ctk.CTkFrame(win, fg_color="transparent")
@@ -556,6 +576,7 @@ class App(ctk.CTk):
                 "lang": new_lang,
                 "tape_size": combo_tape.get(),
                 "color": is_color,
+                "owner": e_owner.get().strip(),
             }
             save_config(self.cfg)
             self.lang = new_lang
@@ -752,7 +773,8 @@ class App(ctk.CTk):
                 self._log(f"\n{self.t('pdf_generating')} {len(self.assets)} {self.t('labels')}...")
                 tape = cfg.get("tape_size", "36mm")
                 color = cfg.get("color", False)
-                make_pdf(self.assets, path, logo, tape, color)
+                owner = cfg.get("owner", "")
+                make_pdf(self.assets, path, logo, tape, color, owner)
                 self._log(f"{self.t('pdf_saved')} {path}")
                 self.after(0, lambda: self.lbl_count.configure(
                     text=f"{len(self.assets)} {self.t('labels_generated')}"))
