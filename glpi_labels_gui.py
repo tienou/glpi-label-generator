@@ -738,8 +738,15 @@ class App(ctk.CTk):
                 self._display_assets(self.assets)
 
                 # Generate to temp file and open directly
-                import tempfile, time
-                path = os.path.join(tempfile.gettempdir(), f"glpi_etiquettes_{int(time.time())}.pdf")
+                import tempfile, time, glob
+                tmp_dir = tempfile.gettempdir()
+                # Clean old generated PDFs (ignore locked files)
+                for old in glob.glob(os.path.join(tmp_dir, "glpi_etiquettes_*.pdf")):
+                    try:
+                        os.remove(old)
+                    except:
+                        pass
+                path = os.path.join(tmp_dir, f"glpi_etiquettes_{int(time.time())}.pdf")
                 cfg = self._get_config_from_ui()
                 logo = cfg.get("logo_path", "")
                 self._log(f"\n{self.t('pdf_generating')} {len(self.assets)} {self.t('labels')}...")
