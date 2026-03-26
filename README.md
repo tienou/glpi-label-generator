@@ -22,16 +22,9 @@ Inventory label generator for GLPI with QR codes. Portable desktop application w
 
 **[Download GLPI_Labels.exe](https://github.com/tienou/glpi-label-generator/releases/latest)** - Portable, no installation required.
 
-## Screenshots
+## Screenshot
 
-### Main interface
-![Main interface](docs/screenshot_main.png)
-
-### Settings
-![Settings](docs/screenshot_settings.png)
-
-### Generated PDF labels
-![Labels](docs/screenshot_labels.png)
+![GLPI Label Generator](docs/screenshot.png)
 
 ## Quick Start
 
