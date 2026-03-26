@@ -44,9 +44,27 @@ Inventory label generator for GLPI with QR codes. Desktop application with moder
 
 ## GLPI API Setup
 
-1. **Enable API**: GLPI > Setup > General > API > Enable REST API
-2. **Create API client**: Add API Client > copy the App Token
-3. **Get User Token**: Your name > Settings > API Token > Regenerate > copy
+### 1. Enable the API
+- Go to **Configuration** > **General** > **API** tab
+- Set **Enable REST API** to **Yes**
+- Save
+
+### 2. Get the App Token
+The App Token identifies your application to GLPI.
+- Go to **Configuration** > **General** > **API** tab
+- Scroll down to **API clients** section
+- Click **+ Add API client**
+- Fill in a name (e.g. "Label Generator")
+- Check **Active**
+- Save
+- Copy the **Application Token** that appears
+
+### 3. Get the User Token
+The User Token identifies you as a user. It is NOT your email or password.
+- Click on **your name** (top right) > **Settings**
+- Scroll down to **Remote access keys** section
+- Next to **API token**, click **Regenerate** if the field is empty
+- Copy the token (a long string like `abc123def456...`)
 
 ## Build from Source
 
