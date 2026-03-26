@@ -124,6 +124,7 @@ T = {
     "color_color":      {"fr": "Couleur", "en": "Color", "es": "Color", "de": "Farbe"},
     "owner_label":      {"fr": "Propriete de :", "en": "Property of:", "es": "Propiedad de:", "de": "Eigentum von:"},
     "owner_placeholder":{"fr": "ex: Groupe Genesienne", "en": "e.g. My Company", "es": "ej: Mi Empresa", "de": "z.B. Meine Firma"},
+    "owner_prefix":     {"fr": "Propriete de :", "en": "Property of:", "es": "Propiedad de:", "de": "Eigentum von:"},
 }
 
 # === CONFIG ===
@@ -773,7 +774,8 @@ class App(ctk.CTk):
                 self._log(f"\n{self.t('pdf_generating')} {len(self.assets)} {self.t('labels')}...")
                 tape = cfg.get("tape_size", "36mm")
                 color = cfg.get("color", False)
-                owner = cfg.get("owner", "")
+                raw_owner = cfg.get("owner", "")
+                owner = f"{self.t('owner_prefix')} {raw_owner}" if raw_owner else ""
                 make_pdf(self.assets, path, logo, tape, color, owner)
                 self._log(f"{self.t('pdf_saved')} {path}")
                 self.after(0, lambda: self.lbl_count.configure(
