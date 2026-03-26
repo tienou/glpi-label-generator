@@ -275,22 +275,24 @@ def draw_label(c, x, y, a, logo_path, tape="36mm", color_mode="bw", owner=""):
             gray = rgb.convert("L")
 
             if inverse and is_mono:
-                # Inverse mono: invert + threshold, white bg becomes transparent
-                inv_gray = ImageOps.invert(gray)
-                bw = inv_gray.point(lambda p: 255 if p > 128 else 0)
+                # Inverse mono: everything non-white becomes white, white bg becomes transparent
+                # Detect near-white pixels as background (threshold > 240)
+                mask = gray.point(lambda p: 0 if p > 240 else 255)  # 0=bg, 255=content
+                white = PILImage.new("L", gray.size, 255)
                 if alpha:
-                    final_alpha = PILImage.composite(bw, PILImage.new("L", bw.size, 0), alpha)
+                    final_alpha = PILImage.composite(mask, PILImage.new("L", mask.size, 0), alpha)
                 else:
-                    final_alpha = bw  # white bg -> black alpha -> transparent
-                pil_img = PILImage.merge("RGBA", (bw, bw, bw, final_alpha))
+                    final_alpha = mask
+                pil_img = PILImage.merge("RGBA", (white, white, white, final_alpha))
             elif inverse:
-                # Inverse: grayscale + invert, white bg becomes transparent
-                inv_gray = ImageOps.invert(gray)
+                # Inverse: everything non-white becomes white, white bg becomes transparent
+                mask = gray.point(lambda p: 0 if p > 240 else 255)
+                white = PILImage.new("L", gray.size, 255)
                 if alpha:
-                    final_alpha = PILImage.composite(inv_gray, PILImage.new("L", inv_gray.size, 0), alpha)
+                    final_alpha = PILImage.composite(mask, PILImage.new("L", mask.size, 0), alpha)
                 else:
-                    final_alpha = inv_gray
-                pil_img = PILImage.merge("RGBA", (inv_gray, inv_gray, inv_gray, final_alpha))
+                    final_alpha = mask
+                pil_img = PILImage.merge("RGBA", (white, white, white, final_alpha))
             elif is_mono:
                 # Mono: pure black/white, preserve transparency
                 bw = gray.point(lambda p: 0 if p < 128 else 255)
