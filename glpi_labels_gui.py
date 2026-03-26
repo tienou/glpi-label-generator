@@ -102,6 +102,9 @@ T = {
     "col_name":         {"fr": "Nom", "en": "Name", "es": "Nombre", "de": "Name"},
     "col_location":     {"fr": "Lieu", "en": "Location", "es": "Lugar", "de": "Standort"},
     "no_name":          {"fr": "Sans nom", "en": "No name", "es": "Sin nombre", "de": "Ohne Name"},
+    "auth_bad_request": {"fr": "Echec authentification (400). Verifiez App Token et User Token dans Parametres.", "en": "Authentication failed (400). Check App Token and User Token in Settings.", "es": "Error de autenticacion (400). Verifique App Token y User Token en Ajustes.", "de": "Authentifizierung fehlgeschlagen (400). Prufen Sie App Token und User Token in Einstellungen."},
+    "auth_unauthorized":{"fr": "Token invalide ou expire (401). Regenerez vos tokens dans GLPI.", "en": "Invalid or expired token (401). Regenerate your tokens in GLPI.", "es": "Token invalido o expirado (401). Regenere sus tokens en GLPI.", "de": "Ungueltiger oder abgelaufener Token (401). Erneuern Sie Ihre Tokens in GLPI."},
+    "connection_failed":{"fr": "Impossible de se connecter au serveur. Verifiez l'URL GLPI.", "en": "Cannot connect to server. Check the GLPI URL.", "es": "No se puede conectar al servidor. Verifique la URL GLPI.", "de": "Verbindung zum Server nicht moeglich. Pruefen Sie die GLPI-URL."},
 }
 
 # === CONFIG ===
@@ -560,8 +563,10 @@ class App(ctk.CTk):
         # Production mode
         self._log(f"{self.t('connecting')} {cfg['glpi_url']}...")
         g = GLPI(cfg["glpi_url"], cfg["app_token"], cfg["user_token"])
+        connected = False
         try:
             g.start()
+            connected = True
             self._log(self.t("session_ok"))
 
             types_to_fetch = [filters["type"]] if filters["type"] else list(ASSET_TYPES.keys())
@@ -591,9 +596,22 @@ class App(ctk.CTk):
                     for item in items:
                         assets.append(item_to_asset(item, type_key, cfg["glpi_url"], self))
                 return assets
+        except requests.exceptions.HTTPError as e:
+            status = e.response.status_code if e.response is not None else "?"
+            if status == 400:
+                self._log(f"\n{self.t('error')} {self.t('auth_bad_request')}")
+            elif status == 401:
+                self._log(f"\n{self.t('error')} {self.t('auth_unauthorized')}")
+            else:
+                self._log(f"\n{self.t('error')} HTTP {status}: {e}")
+            raise
+        except requests.exceptions.ConnectionError:
+            self._log(f"\n{self.t('error')} {self.t('connection_failed')}")
+            raise
         finally:
-            g.stop()
-            self._log(self.t("session_closed"))
+            if connected:
+                g.stop()
+                self._log(self.t("session_closed"))
 
     def _display_assets(self, assets):
         """Display assets in the log box as a table."""
