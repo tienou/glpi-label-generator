@@ -126,6 +126,7 @@ T = {
     "color_color":      {"fr": "Couleur", "en": "Color", "es": "Color", "de": "Farbe"},
     "color_inverse":    {"fr": "Inverse (blanc sur noir)", "en": "Inverse (white on black)", "es": "Inverso (blanco sobre negro)", "de": "Invertiert (weiss auf schwarz)"},
     "color_inverse_mono":{"fr": "Inverse Mono", "en": "Inverse Mono", "es": "Inverso Mono", "de": "Invertiert Mono"},
+    "show_date_label":  {"fr": "Afficher date inventaire", "en": "Show inventory date", "es": "Mostrar fecha inventario", "de": "Inventardatum anzeigen"},
     "owner_label":      {"fr": "Propriete de :", "en": "Property of:", "es": "Propiedad de:", "de": "Eigentum von:"},
     "owner_placeholder":{"fr": "ex: Groupe Genesienne", "en": "e.g. My Company", "es": "ej: Mi Empresa", "de": "z.B. Meine Firma"},
     "owner_prefix":     {"fr": "Propriete de :", "en": "Property of:", "es": "Propiedad de:", "de": "Eigentum von:"},
@@ -144,7 +145,7 @@ def _migrate_old_config():
 
 def load_config():
     _migrate_old_config()
-    defaults = {"glpi_url": "", "app_token": "", "user_token": "", "logo_path": "", "lang": "fr", "tape_size": "36mm", "color_mode": "bw", "owner": ""}
+    defaults = {"glpi_url": "", "app_token": "", "user_token": "", "logo_path": "", "lang": "fr", "tape_size": "36mm", "color_mode": "bw", "owner": "", "show_date": True}
     if os.path.exists(CONFIG_PATH):
         try:
             with open(CONFIG_PATH, "r") as f:
@@ -215,7 +216,7 @@ def make_qr(url, inverse=False):
     return ImageReader(buf)
 
 # === DRAW LABEL ===
-def draw_label(c, x, y, a, logo_path, tape="36mm", color_mode="bw", owner=""):
+def draw_label(c, x, y, a, logo_path, tape="36mm", color_mode="bw", owner="", show_date=True):
     ts = TAPE_SIZES.get(tape, TAPE_SIZES["36mm"])
     lw = ts["label_w"] * mm
     lh = ts["label_h"] * mm
@@ -336,7 +337,7 @@ def draw_label(c, x, y, a, logo_path, tape="36mm", color_mode="bw", owner=""):
 
     # Date inventaire
     date_inv = a.get("date_inv", "") or ""
-    if date_inv and tape != "25mm":
+    if date_inv and tape != "25mm" and show_date:
         c.setFont("Helvetica", ts["font_loc"])
         c.setFillColor(sub_color)
         c.drawString(tx, y+lh-24*mm, f"Inv: {date_inv}")
@@ -344,7 +345,7 @@ def draw_label(c, x, y, a, logo_path, tape="36mm", color_mode="bw", owner=""):
     # Location
     loc = a.get("location", "") or ""
     if loc:
-        loc_y = y+lh-28*mm if (date_inv and tape != "25mm") else y+lh-24*mm
+        loc_y = y+lh-28*mm if (date_inv and tape != "25mm" and show_date) else y+lh-24*mm
         c.setFont("Helvetica-Oblique" if not is_color else "Helvetica", ts["font_loc"])
         c.setFillColor(loc_color)
         c.drawString(tx, loc_y, loc[:20])
@@ -366,7 +367,7 @@ def draw_label(c, x, y, a, logo_path, tape="36mm", color_mode="bw", owner=""):
     c.setFillColor(HexColor("#000000"))
 
 # === GENERATE PDF ===
-def make_pdf(assets, path, logo_path, tape="36mm", color_mode="bw", owner=""):
+def make_pdf(assets, path, logo_path, tape="36mm", color_mode="bw", owner="", show_date=True):
     ts = TAPE_SIZES.get(tape, TAPE_SIZES["36mm"])
     lw = ts["label_w"] * mm
     lh = ts["label_h"] * mm
@@ -382,7 +383,7 @@ def make_pdf(assets, path, logo_path, tape="36mm", color_mode="bw", owner=""):
         if i > 0 and pi == 0:
             c.showPage()
         col, row = pi % cols, pi // cols
-        draw_label(c, MARGIN_X + col*lw, ph - MARGIN_Y - (row+1)*(lh+GAP_Y), a, logo_path, tape, color_mode, owner)
+        draw_label(c, MARGIN_X + col*lw, ph - MARGIN_Y - (row+1)*(lh+GAP_Y), a, logo_path, tape, color_mode, owner, show_date)
     c.save()
     return len(assets)
 
@@ -650,19 +651,24 @@ class App(ctk.CTk):
         combo_color.set(color_map.get(current_mode, self.t("color_bw")))
         combo_color.grid(row=5, column=1, sticky="w", padx=(10, 0), pady=6)
 
+        # Show inventory date checkbox
+        chk_date_var = ctk.BooleanVar(value=self.cfg.get("show_date", True))
+        chk_date = ctk.CTkCheckBox(grid, text=self.t("show_date_label"), variable=chk_date_var)
+        chk_date.grid(row=6, column=0, columnspan=3, sticky="w", pady=6)
+
         # Owner text
-        ctk.CTkLabel(grid, text=self.t("owner_label")).grid(row=6, column=0, sticky="w", pady=6)
+        ctk.CTkLabel(grid, text=self.t("owner_label")).grid(row=7, column=0, sticky="w", pady=6)
         e_owner = ctk.CTkEntry(grid, placeholder_text=self.t("owner_placeholder"))
-        e_owner.grid(row=6, column=1, sticky="ew", padx=(10, 0), pady=6, columnspan=2)
+        e_owner.grid(row=7, column=1, sticky="ew", padx=(10, 0), pady=6, columnspan=2)
         e_owner.insert(0, self.cfg.get("owner", ""))
 
         # Language selector
-        ctk.CTkLabel(grid, text=self.t("language_label")).grid(row=7, column=0, sticky="w", pady=6)
+        ctk.CTkLabel(grid, text=self.t("language_label")).grid(row=8, column=0, sticky="w", pady=6)
         lang_names = list(LANGS.keys())
         combo_lang = ctk.CTkComboBox(grid, values=lang_names, state="readonly", width=180)
         current_name = next((k for k, v in LANGS.items() if v == self.lang), "Francais")
         combo_lang.set(current_name)
-        combo_lang.grid(row=7, column=1, sticky="w", padx=(10, 0), pady=6)
+        combo_lang.grid(row=8, column=1, sticky="w", padx=(10, 0), pady=6)
 
         # Buttons
         btn_frame = ctk.CTkFrame(win, fg_color="transparent")
@@ -685,6 +691,7 @@ class App(ctk.CTk):
                 "tape_size": combo_tape.get(),
                 "color_mode": sel_mode,
                 "owner": e_owner.get().strip(),
+                "show_date": chk_date_var.get(),
             }
             save_config(self.cfg)
             self.lang = new_lang
@@ -888,7 +895,8 @@ class App(ctk.CTk):
                     color_mode = cfg.get("color_mode", "bw")
                 raw_owner = cfg.get("owner", "")
                 owner = f"{self.t('owner_prefix')} {raw_owner}" if raw_owner else ""
-                make_pdf(self.assets, path, logo, tape, color_mode, owner)
+                show_date = cfg.get("show_date", True)
+                make_pdf(self.assets, path, logo, tape, color_mode, owner, show_date)
                 self._log(f"{self.t('pdf_saved')} {path}")
                 self.after(0, lambda: self.lbl_count.configure(
                     text=f"{len(self.assets)} {self.t('labels_generated')}"))
