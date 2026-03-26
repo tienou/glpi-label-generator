@@ -700,49 +700,31 @@ class App(ctk.CTk):
 
                 self._display_assets(self.assets)
 
-                # Ask for save path on main thread
-                def ask_save():
-                    default_name = "glpi_etiquettes.pdf"
-                    if self._is_demo_mode():
-                        default_name = "glpi_etiquettes_DEMO.pdf"
-                    path = filedialog.asksaveasfilename(
-                        title=self.t("save_pdf_title"),
-                        defaultextension=".pdf",
-                        initialfile=default_name,
-                        filetypes=[("PDF", "*.pdf")])
-                    if path:
-                        threading.Thread(target=lambda: do_pdf(path), daemon=True).start()
+                # Generate to temp file and open directly
+                import tempfile
+                path = os.path.join(tempfile.gettempdir(), "glpi_etiquettes.pdf")
+                cfg = self._get_config_from_ui()
+                logo = cfg.get("logo_path", "")
+                self._log(f"\n{self.t('pdf_generating')} {len(self.assets)} {self.t('labels')}...")
+                make_pdf(self.assets, path, logo)
+                self._log(f"{self.t('pdf_saved')} {path}")
+                self.after(0, lambda: self.lbl_count.configure(
+                    text=f"{len(self.assets)} {self.t('labels_generated')}"))
+
+                try:
+                    if sys.platform == "win32":
+                        os.startfile(path)
+                    elif sys.platform == "darwin":
+                        os.system(f'open "{path}"')
                     else:
-                        self._log(f"\n{self.t('pdf_cancelled')}")
-                        self._set_buttons_state("normal")
-
-                def do_pdf(path):
-                    try:
-                        cfg = self._get_config_from_ui()
-                        logo = cfg.get("logo_path", "")
-                        self._log(f"\n{self.t('pdf_generating')} {len(self.assets)} {self.t('labels')}...")
-                        make_pdf(self.assets, path, logo)
-                        self._log(f"{self.t('pdf_saved')} {path}")
-                        self.after(0, lambda: self.lbl_count.configure(
-                            text=f"{len(self.assets)} {self.t('labels_generated')}"))
-
-                        # Open PDF
-                        if sys.platform == "win32":
-                            os.startfile(path)
-                        elif sys.platform == "darwin":
-                            os.system(f'open "{path}"')
-                        else:
-                            os.system(f'xdg-open "{path}"')
-                    except Exception as e:
-                        self._log(f"\n{self.t('error')} {e}")
-                    finally:
-                        self.after(0, lambda: self._set_buttons_state("normal"))
-
-                self.after(0, ask_save)
+                        os.system(f'xdg-open "{path}"')
+                except Exception as e:
+                    self._log(f"\n{self.t('error')} {e}")
 
             except Exception as e:
                 self._log(f"\n{self.t('error')} {e}")
                 self.after(0, lambda: self.lbl_count.configure(text=self.t("error")))
+            finally:
                 self.after(0, lambda: self._set_buttons_state("normal"))
 
         threading.Thread(target=worker, daemon=True).start()
