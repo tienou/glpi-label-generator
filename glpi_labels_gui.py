@@ -231,7 +231,17 @@ def draw_label(c, x, y, a, logo_path, tape="36mm", color=False, owner=""):
     if logo_path and os.path.exists(logo_path):
         lgh = ts["logo_h"] * mm
         lgw = lgh * 2000/1444
-        c.drawImage(logo_path, x+lw-lgw-2*mm, y+lh-lgh-1*mm, lgw, lgh,
+        if not color:
+            # Convert logo to grayscale for B&W mode
+            from PIL import Image as PILImage
+            pil_img = PILImage.open(logo_path).convert("L").convert("RGB")
+            buf_logo = io.BytesIO()
+            pil_img.save(buf_logo, format="PNG")
+            buf_logo.seek(0)
+            logo_img = ImageReader(buf_logo)
+        else:
+            logo_img = logo_path
+        c.drawImage(logo_img, x+lw-lgw-2*mm, y+lh-lgh-1*mm, lgw, lgh,
                     preserveAspectRatio=True, mask="auto")
 
     # Name
