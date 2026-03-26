@@ -17,7 +17,7 @@ Inventory label generator for GLPI with QR codes. Desktop application with moder
 
 ## Download
 
-**[Download GLPI_Labels.exe](https://github.com/etmusic31/glpi-label-generator/releases/latest)** - Portable, no installation required.
+**[Download GLPI_Labels.exe](https://github.com/tienou/glpi-label-generator/releases/latest)** - Portable, no installation required.
 
 ## Screenshots
 
@@ -32,7 +32,7 @@ Inventory label generator for GLPI with QR codes. Desktop application with moder
 
 ## Quick Start
 
-1. Download `GLPI_Labels.exe` from [Releases](https://github.com/etmusic31/glpi-label-generator/releases/latest)
+1. Download `GLPI_Labels.exe` from [Releases](https://github.com/tienou/glpi-label-generator/releases/latest)
 2. Run the exe (no installation needed)
 3. Click **Settings** to configure your GLPI instance:
    - **GLPI URL**: Your instance URL (e.g. `https://your-instance.glpi-network.cloud`)
