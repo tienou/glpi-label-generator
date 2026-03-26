@@ -35,9 +35,9 @@ CONFIG_PATH = os.path.join(get_config_dir(), "glpi_config.json")
 
 # === LABEL LAYOUTS PER TAPE SIZE ===
 TAPE_SIZES = {
-    "36mm": {"label_w": 80, "label_h": 36, "qr_size": 26, "font_name": 9, "font_type": 5.5, "font_sn": 6.5, "font_loc": 6, "font_inv": 5.5, "logo_h": 9},
-    "25mm": {"label_w": 70, "label_h": 25, "qr_size": 18, "font_name": 7.5, "font_type": 5, "font_sn": 5.5, "font_loc": 5, "font_inv": 4.5, "logo_h": 6},
-    "50mm": {"label_w": 90, "label_h": 50, "qr_size": 36, "font_name": 11, "font_type": 7, "font_sn": 8, "font_loc": 7, "font_inv": 6.5, "logo_h": 12},
+    "36mm": {"label_w": 80, "label_h": 36, "qr_size": 26, "font_name": 9, "font_type": 5.5, "font_sn": 6.5, "font_loc": 6, "font_inv": 5.5, "logo_h": 12},
+    "25mm": {"label_w": 70, "label_h": 25, "qr_size": 18, "font_name": 7.5, "font_type": 5, "font_sn": 5.5, "font_loc": 5, "font_inv": 4.5, "logo_h": 8},
+    "50mm": {"label_w": 90, "label_h": 50, "qr_size": 36, "font_name": 11, "font_type": 7, "font_sn": 8, "font_loc": 7, "font_inv": 6.5, "logo_h": 16},
 }
 MARGIN_X = 10 * mm
 MARGIN_Y = 10 * mm
