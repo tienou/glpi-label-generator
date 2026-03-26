@@ -226,24 +226,24 @@ def draw_label(c, x, y, a, logo_path):
     c.drawString(tx, y+LABEL_H-10*mm, nm)
 
     c.setFont("Helvetica", 5.5)
-    c.setFillColor(HexColor("#666666"))
+    c.setFillColor(HexColor("#000000"))
     c.drawString(tx, y+LABEL_H-14*mm, a["type_label"])
 
     c.setFont("Helvetica-Bold", 6.5)
-    c.setFillColor(HexColor("#333333"))
+    c.setFillColor(HexColor("#000000"))
     sn = a.get("serial", "N/A") or "N/A"
     c.drawString(tx, y+LABEL_H-19.5*mm, f"S/N: {sn[:20]}")
 
     loc = a.get("location", "") or ""
     if loc:
-        c.setFont("Helvetica", 6)
-        c.setFillColor(HexColor("#1B3A5C"))
+        c.setFont("Helvetica-Oblique", 6)
+        c.setFillColor(HexColor("#000000"))
         c.drawString(tx, y+LABEL_H-24*mm, loc[:20])
 
     inv = a.get("otherserial", "") or ""
     if inv:
         c.setFont("Helvetica", 5.5)
-        c.setFillColor(HexColor("#999999"))
+        c.setFillColor(HexColor("#555555"))
         c.drawString(tx, y+3*mm, f"Inv: {inv}")
 
     c.setFillColor(HexColor("#000000"))
