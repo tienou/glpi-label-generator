@@ -33,10 +33,12 @@ def get_app_dir():
 
 CONFIG_PATH = os.path.join(get_config_dir(), "glpi_config.json")
 
-# === LABEL LAYOUT (mm) ===
-LABEL_W = 80 * mm
-LABEL_H = 36 * mm
-QR_SIZE = 26 * mm
+# === LABEL LAYOUTS PER TAPE SIZE ===
+TAPE_SIZES = {
+    "36mm": {"label_w": 80, "label_h": 36, "qr_size": 26, "font_name": 9, "font_type": 5.5, "font_sn": 6.5, "font_loc": 6, "font_inv": 5.5, "logo_h": 9},
+    "25mm": {"label_w": 70, "label_h": 25, "qr_size": 18, "font_name": 7.5, "font_type": 5, "font_sn": 5.5, "font_loc": 5, "font_inv": 4.5, "logo_h": 6},
+    "50mm": {"label_w": 90, "label_h": 50, "qr_size": 36, "font_name": 11, "font_type": 7, "font_sn": 8, "font_loc": 7, "font_inv": 6.5, "logo_h": 12},
+}
 MARGIN_X = 10 * mm
 MARGIN_Y = 10 * mm
 GAP_Y = 4 * mm
@@ -116,6 +118,10 @@ T = {
     "auth_bad_request": {"fr": "Echec authentification (400). Verifiez App Token et User Token dans Parametres.", "en": "Authentication failed (400). Check App Token and User Token in Settings.", "es": "Error de autenticacion (400). Verifique App Token y User Token en Ajustes.", "de": "Authentifizierung fehlgeschlagen (400). Prufen Sie App Token und User Token in Einstellungen."},
     "auth_unauthorized":{"fr": "Token invalide ou expire (401). Regenerez vos tokens dans GLPI.", "en": "Invalid or expired token (401). Regenerate your tokens in GLPI.", "es": "Token invalido o expirado (401). Regenere sus tokens en GLPI.", "de": "Ungueltiger oder abgelaufener Token (401). Erneuern Sie Ihre Tokens in GLPI."},
     "connection_failed":{"fr": "Impossible de se connecter au serveur. Verifiez l'URL GLPI.", "en": "Cannot connect to server. Check the GLPI URL.", "es": "No se puede conectar al servidor. Verifique la URL GLPI.", "de": "Verbindung zum Server nicht moeglich. Pruefen Sie die GLPI-URL."},
+    "tape_size_label":  {"fr": "Ruban :", "en": "Tape:", "es": "Cinta:", "de": "Band:"},
+    "color_mode_label": {"fr": "Couleur :", "en": "Color:", "es": "Color:", "de": "Farbe:"},
+    "color_bw":         {"fr": "Noir & Blanc", "en": "Black & White", "es": "Blanco y Negro", "de": "Schwarz & Weiss"},
+    "color_color":      {"fr": "Couleur", "en": "Color", "es": "Color", "de": "Farbe"},
 }
 
 # === CONFIG ===
@@ -131,7 +137,7 @@ def _migrate_old_config():
 
 def load_config():
     _migrate_old_config()
-    defaults = {"glpi_url": "", "app_token": "", "user_token": "", "logo_path": "", "lang": "fr"}
+    defaults = {"glpi_url": "", "app_token": "", "user_token": "", "logo_path": "", "lang": "fr", "tape_size": "36mm", "color": False}
     if os.path.exists(CONFIG_PATH):
         try:
             with open(CONFIG_PATH, "r") as f:
@@ -200,60 +206,75 @@ def make_qr(url):
     return ImageReader(buf)
 
 # === DRAW LABEL ===
-def draw_label(c, x, y, a, logo_path):
+def draw_label(c, x, y, a, logo_path, tape="36mm", color=False):
+    ts = TAPE_SIZES.get(tape, TAPE_SIZES["36mm"])
+    lw = ts["label_w"] * mm
+    lh = ts["label_h"] * mm
+    qs = ts["qr_size"] * mm
+
     c.setStrokeColor(HexColor("#CCCCCC"))
     c.setLineWidth(0.5)
-    c.roundRect(x, y, LABEL_W, LABEL_H, 2*mm)
+    c.roundRect(x, y, lw, lh, 2*mm)
 
-    sx = x + 3*mm + QR_SIZE + 2*mm
+    sx = x + 3*mm + qs + 2*mm
     c.setStrokeColor(HexColor("#E0E0E0"))
     c.setLineWidth(0.3)
-    c.line(sx, y+3*mm, sx, y+LABEL_H-3*mm)
+    c.line(sx, y+3*mm, sx, y+lh-3*mm)
 
-    c.drawImage(make_qr(a["url"]), x+3*mm, y+(LABEL_H-QR_SIZE)/2, QR_SIZE, QR_SIZE)
+    c.drawImage(make_qr(a["url"]), x+3*mm, y+(lh-qs)/2, qs, qs)
 
     tx = sx + 3*mm
 
     if logo_path and os.path.exists(logo_path):
-        lh = 9*mm
-        lw = lh * 2000/1444
-        c.drawImage(logo_path, x+LABEL_W-lw-2*mm, y+LABEL_H-lh-1*mm, lw, lh,
+        lgh = ts["logo_h"] * mm
+        lgw = lgh * 2000/1444
+        c.drawImage(logo_path, x+lw-lgw-2*mm, y+lh-lgh-1*mm, lgw, lgh,
                     preserveAspectRatio=True, mask="auto")
 
-    c.setFont("Helvetica-Bold", 9)
+    # Name
+    c.setFont("Helvetica-Bold", ts["font_name"])
     c.setFillColor(HexColor("#000000"))
-    nm = a["name"][:17]+"..." if len(a["name"]) > 18 else a["name"]
-    c.drawString(tx, y+LABEL_H-10*mm, nm)
+    max_chars = int(ts["label_w"] * 0.22)
+    nm = a["name"][:max_chars]+"..." if len(a["name"]) > max_chars+1 else a["name"]
+    c.drawString(tx, y+lh-10*mm, nm)
 
-    c.setFont("Helvetica", 5.5)
-    c.setFillColor(HexColor("#000000"))
-    c.drawString(tx, y+LABEL_H-14*mm, a["type_label"])
+    # Type
+    c.setFont("Helvetica", ts["font_type"])
+    c.setFillColor(HexColor("#666666") if color else HexColor("#000000"))
+    c.drawString(tx, y+lh-14*mm, a["type_label"])
 
-    c.setFont("Helvetica-Bold", 6.5)
-    c.setFillColor(HexColor("#000000"))
+    # Serial
+    c.setFont("Helvetica-Bold", ts["font_sn"])
+    c.setFillColor(HexColor("#333333") if color else HexColor("#000000"))
     sn = a.get("serial", "N/A") or "N/A"
-    c.drawString(tx, y+LABEL_H-19.5*mm, f"S/N: {sn[:20]}")
+    c.drawString(tx, y+lh-19.5*mm, f"S/N: {sn[:20]}")
 
+    # Location
     loc = a.get("location", "") or ""
     if loc:
-        c.setFont("Helvetica-Oblique", 6)
-        c.setFillColor(HexColor("#000000"))
-        c.drawString(tx, y+LABEL_H-24*mm, loc[:20])
+        c.setFont("Helvetica-Oblique" if not color else "Helvetica", ts["font_loc"])
+        c.setFillColor(HexColor("#1B3A5C") if color else HexColor("#000000"))
+        c.drawString(tx, y+lh-24*mm, loc[:20])
 
+    # Inventory number (skip on 25mm - not enough space)
     inv = a.get("otherserial", "") or ""
-    if inv:
-        c.setFont("Helvetica", 5.5)
-        c.setFillColor(HexColor("#555555"))
+    if inv and tape != "25mm":
+        c.setFont("Helvetica", ts["font_inv"])
+        c.setFillColor(HexColor("#999999") if color else HexColor("#555555"))
         c.drawString(tx, y+3*mm, f"Inv: {inv}")
 
     c.setFillColor(HexColor("#000000"))
 
 # === GENERATE PDF ===
-def make_pdf(assets, path, logo_path):
+def make_pdf(assets, path, logo_path, tape="36mm", color=False):
+    ts = TAPE_SIZES.get(tape, TAPE_SIZES["36mm"])
+    lw = ts["label_w"] * mm
+    lh = ts["label_h"] * mm
+
     c = canvas.Canvas(path, pagesize=A4)
     pw, ph = A4
-    cols = int((pw - 2*MARGIN_X) // LABEL_W)
-    rows = int((ph - 2*MARGIN_Y) // (LABEL_H + GAP_Y))
+    cols = int((pw - 2*MARGIN_X) // lw)
+    rows = int((ph - 2*MARGIN_Y) // (lh + GAP_Y))
     per_page = cols * rows
 
     for i, a in enumerate(assets):
@@ -261,7 +282,7 @@ def make_pdf(assets, path, logo_path):
         if i > 0 and pi == 0:
             c.showPage()
         col, row = pi % cols, pi // cols
-        draw_label(c, MARGIN_X + col*LABEL_W, ph - MARGIN_Y - (row+1)*(LABEL_H+GAP_Y), a, logo_path)
+        draw_label(c, MARGIN_X + col*lw, ph - MARGIN_Y - (row+1)*(lh+GAP_Y), a, logo_path, tape, color)
     c.save()
     return len(assets)
 
@@ -447,7 +468,7 @@ class App(ctk.CTk):
         """Open settings in a separate window."""
         win = ctk.CTkToplevel(self)
         win.title(self.t("settings_title"))
-        win.geometry("550x430")
+        win.geometry("550x520")
         win.resizable(False, False)
         win.transient(self)
         win.grab_set()
@@ -455,7 +476,7 @@ class App(ctk.CTk):
         # Center on parent
         win.update_idletasks()
         x = self.winfo_x() + (self.winfo_width() - 550) // 2
-        y = self.winfo_y() + (self.winfo_height() - 430) // 2
+        y = self.winfo_y() + (self.winfo_height() - 520) // 2
         win.geometry(f"+{x}+{y}")
 
         ctk.CTkLabel(win, text=self.t("glpi_config"),
@@ -495,14 +516,27 @@ class App(ctk.CTk):
 
         ctk.CTkButton(grid, text="...", width=40, command=browse_logo).grid(row=3, column=2, pady=6)
 
+        # Tape size selector
+        ctk.CTkLabel(grid, text=self.t("tape_size_label")).grid(row=4, column=0, sticky="w", pady=6)
+        tape_values = list(TAPE_SIZES.keys())
+        combo_tape = ctk.CTkComboBox(grid, values=tape_values, state="readonly", width=180)
+        combo_tape.set(self.cfg.get("tape_size", "36mm"))
+        combo_tape.grid(row=4, column=1, sticky="w", padx=(10, 0), pady=6)
+
+        # Color mode
+        ctk.CTkLabel(grid, text=self.t("color_mode_label")).grid(row=5, column=0, sticky="w", pady=6)
+        color_values = [self.t("color_bw"), self.t("color_color")]
+        combo_color = ctk.CTkComboBox(grid, values=color_values, state="readonly", width=180)
+        combo_color.set(self.t("color_color") if self.cfg.get("color", False) else self.t("color_bw"))
+        combo_color.grid(row=5, column=1, sticky="w", padx=(10, 0), pady=6)
+
         # Language selector
-        ctk.CTkLabel(grid, text=self.t("language_label")).grid(row=4, column=0, sticky="w", pady=6)
+        ctk.CTkLabel(grid, text=self.t("language_label")).grid(row=6, column=0, sticky="w", pady=6)
         lang_names = list(LANGS.keys())
         combo_lang = ctk.CTkComboBox(grid, values=lang_names, state="readonly", width=180)
-        # Set current language name
         current_name = next((k for k, v in LANGS.items() if v == self.lang), "Francais")
         combo_lang.set(current_name)
-        combo_lang.grid(row=4, column=1, sticky="w", padx=(10, 0), pady=6)
+        combo_lang.grid(row=6, column=1, sticky="w", padx=(10, 0), pady=6)
 
         # Buttons
         btn_frame = ctk.CTkFrame(win, fg_color="transparent")
@@ -513,12 +547,15 @@ class App(ctk.CTk):
 
         def do_save():
             new_lang = LANGS.get(combo_lang.get(), "fr")
+            is_color = combo_color.get() == self.t("color_color")
             self.cfg = {
                 "glpi_url": e_url.get().strip().rstrip("/"),
                 "app_token": e_app.get().strip(),
                 "user_token": e_user.get().strip(),
                 "logo_path": e_logo.get().strip(),
                 "lang": new_lang,
+                "tape_size": combo_tape.get(),
+                "color": is_color,
             }
             save_config(self.cfg)
             self.lang = new_lang
@@ -706,7 +743,9 @@ class App(ctk.CTk):
                 cfg = self._get_config_from_ui()
                 logo = cfg.get("logo_path", "")
                 self._log(f"\n{self.t('pdf_generating')} {len(self.assets)} {self.t('labels')}...")
-                make_pdf(self.assets, path, logo)
+                tape = cfg.get("tape_size", "36mm")
+                color = cfg.get("color", False)
+                make_pdf(self.assets, path, logo, tape, color)
                 self._log(f"{self.t('pdf_saved')} {path}")
                 self.after(0, lambda: self.lbl_count.configure(
                     text=f"{len(self.assets)} {self.t('labels_generated')}"))
