@@ -293,12 +293,20 @@ def draw_label(c, x, y, a, logo_path, tape="36mm", color_mode="bw", owner=""):
     sn = a.get("serial", "N/A") or "N/A"
     c.drawString(tx, y+lh-19.5*mm, f"S/N: {sn[:20]}")
 
+    # Date inventaire
+    date_inv = a.get("date_inv", "") or ""
+    if date_inv and tape != "25mm":
+        c.setFont("Helvetica", ts["font_loc"])
+        c.setFillColor(sub_color)
+        c.drawString(tx, y+lh-24*mm, f"Inv: {date_inv}")
+
     # Location
     loc = a.get("location", "") or ""
     if loc:
+        loc_y = y+lh-28*mm if (date_inv and tape != "25mm") else y+lh-24*mm
         c.setFont("Helvetica-Oblique" if not is_color else "Helvetica", ts["font_loc"])
         c.setFillColor(loc_color)
-        c.drawString(tx, y+lh-24*mm, loc[:20])
+        c.drawString(tx, loc_y, loc[:20])
 
     # Bottom line: owner and/or inventory number
     bottom_y = y + 3*mm
@@ -342,6 +350,9 @@ def item_to_asset(item, type_key, glpi_url, app=None):
     at = ASSET_TYPES[type_key]
     type_label = app._asset_type_label(type_key) if app else type_key
     no_name = app.t("no_name") if app else "Sans nom"
+    # Extract year from date_creation (format: "2023-05-12 10:30:00")
+    date_raw = item.get("date_creation", "") or ""
+    date_inv = date_raw[:10] if date_raw else ""  # "2023-05-12"
     return {
         "id": item["id"],
         "name": item.get("name", no_name),
@@ -349,6 +360,7 @@ def item_to_asset(item, type_key, glpi_url, app=None):
         "otherserial": item.get("otherserial", ""),
         "type_label": type_label,
         "location": item.get("completename", item.get("locations_name", "")),
+        "date_inv": date_inv,
         "url": f"{glpi_url}/{at['form']}?id={item['id']}",
     }
 
@@ -358,28 +370,28 @@ def get_demo_data(glpi_url="https://genesienne.fr33.glpi-network.cloud", app=Non
     monitor = app._asset_type_label("Monitor") if app else "Ecran"
     return [
         {"id":3,"name":"Automatisme-2","serial":"JXY51X2","type_label":computer,
-         "location":"Andrezieux","otherserial":"",
+         "location":"Andrezieux","otherserial":"","date_inv":"2021-03-15",
          "url":f"{glpi_url}/front/computer.form.php?id=3"},
         {"id":5,"name":"PC-BUREAU-DG","serial":"ABC123DEF456","type_label":computer,
-         "location":"Chambon","otherserial":"INV-2024-001",
+         "location":"Chambon","otherserial":"INV-2024-001","date_inv":"2024-01-10",
          "url":f"{glpi_url}/front/computer.form.php?id=5"},
         {"id":12,"name":"DELL-U2722D","serial":"CN0F5XYZ789","type_label":monitor,
-         "location":"Chambon","otherserial":"INV-2024-012",
+         "location":"Chambon","otherserial":"INV-2024-012","date_inv":"2023-06-22",
          "url":f"{glpi_url}/front/monitor.form.php?id=12"},
         {"id":8,"name":"PC-ATELIER-01","serial":"HJK789LMN012","type_label":computer,
-         "location":"Sicaf","otherserial":"",
+         "location":"Sicaf","otherserial":"","date_inv":"2019-11-05",
          "url":f"{glpi_url}/front/computer.form.php?id=8"},
         {"id":15,"name":"ECRAN-COMPTA-01","serial":"MNO456PQR789","type_label":monitor,
-         "location":"Andrezieux","otherserial":"INV-2024-015",
+         "location":"Andrezieux","otherserial":"INV-2024-015","date_inv":"2024-02-18",
          "url":f"{glpi_url}/front/monitor.form.php?id=15"},
         {"id":22,"name":"PC-DUNKERQUE-01","serial":"RST012UVW345","type_label":computer,
-         "location":"Dunkerque","otherserial":"",
+         "location":"Dunkerque","otherserial":"","date_inv":"2022-09-01",
          "url":f"{glpi_url}/front/computer.form.php?id=22"},
         {"id":7,"name":"PRECISION-7730","serial":"9XK4W53","type_label":computer,
-         "location":"Chambon","otherserial":"INV-2024-003",
+         "location":"Chambon","otherserial":"INV-2024-003","date_inv":"2020-07-14",
          "url":f"{glpi_url}/front/computer.form.php?id=7"},
         {"id":20,"name":"DELL-P2422H","serial":"FN0R2ABC123","type_label":monitor,
-         "location":"Dunkerque","otherserial":"",
+         "location":"Dunkerque","otherserial":"","date_inv":"2023-11-30",
          "url":f"{glpi_url}/front/monitor.form.php?id=20"},
     ]
 
