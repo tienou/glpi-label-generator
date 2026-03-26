@@ -1,19 +1,22 @@
 # GLPI Label Generator
 
-Inventory label generator for GLPI with QR codes. Desktop application with modern GUI, compatible with Brother PT-P910BT (36mm tape).
+Inventory label generator for GLPI with QR codes. Portable desktop application with modern GUI, compatible with Brother label printers (PT-P950NW, PT-P910BT, etc.).
 
-> Generateur d'etiquettes d'inventaire GLPI avec QR codes. Application desktop avec interface graphique moderne.
+> Generateur d'etiquettes d'inventaire GLPI avec QR codes. Application desktop portable avec interface graphique moderne.
 
 ## Features
 
 - Connects to GLPI API to fetch assets (computers & monitors)
 - Generates QR codes linking directly to GLPI asset pages
 - Produces PDF labels with: QR code, name, type, serial number, location, inventory number, company logo
+- **3 tape sizes**: 25mm, 36mm, 50mm — layout adapts automatically
+- **Color / Black & White mode** — optimized for monochrome label printers
 - Filters by type, location, name, or specific IDs
 - Built-in demo mode with sample data (no GLPI instance required)
 - Multi-language support: Francais, English, Espanol, Deutsch
-- Persistent configuration (saved between sessions)
+- Persistent configuration saved in %APPDATA% (survives exe updates)
 - Dark mode interface
+- PDF opens directly after generation (no save dialog)
 
 ## Download
 
@@ -39,8 +42,10 @@ Inventory label generator for GLPI with QR codes. Desktop application with moder
    - **App Token**: From GLPI > Setup > General > API > Add API client
    - **User Token**: From GLPI > Your name > Settings > Remote API token
    - **Logo**: Optional company logo for labels
+   - **Tape size**: 25mm, 36mm or 50mm
+   - **Color mode**: Black & White (for monochrome printers) or Color
    - **Language**: Choose your preferred language
-4. Use filters to select assets, then click **Generate PDF**
+4. Use filters to select assets, then click **Generate PDF** — the PDF opens automatically
 
 ## GLPI API Setup
 
@@ -95,14 +100,20 @@ python glpi_labels.py --list
 
 ## Label Format
 
-Each label (80x36mm) contains:
+Each label contains:
 - QR code linking to the GLPI asset page
 - Asset name
 - Asset type (Computer/Monitor)
 - Serial number
 - Location
-- Inventory number
+- Inventory number (hidden on 25mm tape)
 - Company logo (optional)
+
+| Tape size | Label dimensions | QR code | Best for |
+|-----------|-----------------|---------|----------|
+| 25mm | 70 x 25 mm | 18 mm | Small devices, compact labels |
+| 36mm | 80 x 36 mm | 26 mm | Standard use (default) |
+| 50mm | 90 x 50 mm | 36 mm | Large labels, easy scanning |
 
 ## Dependencies
 
