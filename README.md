@@ -11,7 +11,8 @@ Inventory label generator for GLPI with QR codes. Portable desktop application w
 - Produces PDF labels with: QR code, name, type, serial number, location, inventory number, company logo
 - **Custom ownership text** — display "Property of: Your Company" on each label
 - **3 tape sizes**: 25mm, 36mm, 50mm — layout adapts automatically
-- **3 color modes**: Color, Black & White, Inverse (white on black)
+- **5 color modes**: Color, Black & White, Monochrome, Inverse, Inverse Mono
+- **First inventory date** — shows asset age at a glance
 - Filters by type, location, name, or specific IDs
 - Built-in demo mode with sample data (no GLPI instance required)
 - Multi-language support: Francais, English, Espanol, Deutsch
@@ -37,7 +38,7 @@ Inventory label generator for GLPI with QR codes. Portable desktop application w
    - **User Token**: From GLPI > Your name > Settings > Remote API token
    - **Logo**: Optional company logo for labels
    - **Tape size**: 25mm, 36mm or 50mm
-   - **Color mode**: Color, Black & White, or Inverse (white on black)
+   - **Color mode**: Color, B&W, Monochrome (pure B&W), Inverse, Inverse Mono
    - **Owner**: Custom text displayed on labels (e.g. "My Company")
    - **Language**: Choose your preferred language
 4. Use filters to select assets, then click **Generate PDF** — the PDF opens automatically
@@ -100,6 +101,7 @@ Each label contains:
 - Asset name
 - Asset type (Computer/Monitor)
 - Serial number
+- First inventory date (asset age)
 - Location
 - Inventory number (hidden on 25mm tape)
 - Company logo (optional)
