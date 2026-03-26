@@ -256,9 +256,11 @@ def draw_label(c, x, y, a, logo_path, tape="36mm", color_mode="bw", owner=""):
             if pil_img.mode != "RGBA":
                 pil_img = pil_img.convert("RGBA")
             if inverse:
+                # Convert to grayscale then invert for clean white-on-black
                 r, g, b, alpha = pil_img.split()
-                rgb = ImageOps.invert(PILImage.merge("RGB", (r, g, b)))
-                pil_img = PILImage.merge("RGBA", (*rgb.split(), alpha))
+                gray = PILImage.merge("RGB", (r, g, b)).convert("L")
+                inv_gray = ImageOps.invert(gray)
+                pil_img = PILImage.merge("RGBA", (inv_gray, inv_gray, inv_gray, alpha))
             elif not is_color:
                 r, g, b, alpha = pil_img.split()
                 gray = PILImage.merge("RGB", (r, g, b)).convert("L").convert("RGB")
