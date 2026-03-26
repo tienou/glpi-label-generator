@@ -6,6 +6,7 @@ Application GUI avec CustomTkinter
 
 import customtkinter as ctk
 import requests, qrcode, io, os, sys, json, threading
+from concurrent.futures import ThreadPoolExecutor
 from tkinter import filedialog, messagebox
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import mm
@@ -129,22 +130,20 @@ class GLPI:
         self.url = url.rstrip("/")
         self.app_token = app_token
         self.user_token = user_token
-        self.tok = None
+        self.session = requests.Session()
+        self.session.headers["App-Token"] = app_token
 
     def start(self):
-        r = requests.get(f"{self.url}/apirest.php/initSession",
-            headers={"App-Token": self.app_token, "Authorization": f"user_token {self.user_token}"})
+        r = self.session.get(f"{self.url}/apirest.php/initSession",
+            headers={"Authorization": f"user_token {self.user_token}"}, timeout=10)
         r.raise_for_status()
-        self.tok = r.json()["session_token"]
-
-    def _h(self):
-        return {"App-Token": self.app_token, "Session-Token": self.tok}
+        self.session.headers["Session-Token"] = r.json()["session_token"]
 
     def get_all(self, ep):
         out, start = [], 0
         while True:
-            r = requests.get(f"{self.url}/apirest.php/{ep}", headers=self._h(),
-                params={"range": f"{start}-{start+49}", "sort": "name", "order": "ASC"})
+            r = self.session.get(f"{self.url}/apirest.php/{ep}",
+                params={"range": f"{start}-{start+199}", "sort": "name", "order": "ASC"}, timeout=15)
             if r.status_code not in (200, 206):
                 break
             b = r.json()
@@ -153,19 +152,20 @@ class GLPI:
             out.extend(b)
             if r.status_code == 200:
                 break
-            start += 50
+            start += 200
         return out
 
     def get_one(self, ep, item_id):
-        r = requests.get(f"{self.url}/apirest.php/{ep}/{item_id}", headers=self._h())
+        r = self.session.get(f"{self.url}/apirest.php/{ep}/{item_id}", timeout=10)
         r.raise_for_status()
         return r.json()
 
     def stop(self):
         try:
-            requests.get(f"{self.url}/apirest.php/killSession", headers=self._h())
+            self.session.get(f"{self.url}/apirest.php/killSession", timeout=5)
         except:
             pass
+        self.session.close()
 
 # === QR CODE ===
 def make_qr(url):
@@ -589,12 +589,18 @@ class App(ctk.CTk):
                         self._log(f"  [!] ID {item_id} {self.t('not_found')}")
                 return assets
             else:
-                assets = []
-                for type_key in types_to_fetch:
+                # Fetch types in parallel
+                def fetch_type(type_key):
                     items = g.get_all(type_key)
                     self._log(f"  {type_key}: {len(items)} {self.t('found')}")
-                    for item in items:
-                        assets.append(item_to_asset(item, type_key, cfg["glpi_url"], self))
+                    return [(item, type_key) for item in items]
+
+                assets = []
+                with ThreadPoolExecutor(max_workers=len(types_to_fetch)) as pool:
+                    results = pool.map(fetch_type, types_to_fetch)
+                    for batch in results:
+                        for item, type_key in batch:
+                            assets.append(item_to_asset(item, type_key, cfg["glpi_url"], self))
                 return assets
         except requests.exceptions.HTTPError as e:
             status = e.response.status_code if e.response is not None else "?"
