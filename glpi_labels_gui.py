@@ -122,8 +122,10 @@ T = {
     "tape_size_label":  {"fr": "Ruban :", "en": "Tape:", "es": "Cinta:", "de": "Band:"},
     "color_mode_label": {"fr": "Couleur :", "en": "Color:", "es": "Color:", "de": "Farbe:"},
     "color_bw":         {"fr": "Noir & Blanc", "en": "Black & White", "es": "Blanco y Negro", "de": "Schwarz & Weiss"},
+    "color_mono":       {"fr": "Monochrome", "en": "Monochrome", "es": "Monocromo", "de": "Monochrom"},
     "color_color":      {"fr": "Couleur", "en": "Color", "es": "Color", "de": "Farbe"},
     "color_inverse":    {"fr": "Inverse (blanc sur noir)", "en": "Inverse (white on black)", "es": "Inverso (blanco sobre negro)", "de": "Invertiert (weiss auf schwarz)"},
+    "color_inverse_mono":{"fr": "Inverse Mono", "en": "Inverse Mono", "es": "Inverso Mono", "de": "Invertiert Mono"},
     "owner_label":      {"fr": "Propriete de :", "en": "Property of:", "es": "Propiedad de:", "de": "Eigentum von:"},
     "owner_placeholder":{"fr": "ex: Groupe Genesienne", "en": "e.g. My Company", "es": "ej: Mi Empresa", "de": "z.B. Meine Firma"},
     "owner_prefix":     {"fr": "Propriete de :", "en": "Property of:", "es": "Propiedad de:", "de": "Eigentum von:"},
@@ -218,21 +220,22 @@ def draw_label(c, x, y, a, logo_path, tape="36mm", color_mode="bw", owner=""):
     lw = ts["label_w"] * mm
     lh = ts["label_h"] * mm
     qs = ts["qr_size"] * mm
-    inverse = color_mode == "inverse"
+    inverse = color_mode in ("inverse", "inverse_mono")
     is_color = color_mode == "color"
+    is_mono = color_mode in ("mono", "inverse_mono")  # Pure black & white, no grays
 
     # Background fill for inverse mode
     if inverse:
         c.setFillColor(HexColor("#000000"))
         c.rect(x, y, lw, lh, fill=1, stroke=0)
-        c.setStrokeColor(HexColor("#333333"))
+        c.setStrokeColor(HexColor("#000000") if is_mono else HexColor("#333333"))
     else:
-        c.setStrokeColor(HexColor("#CCCCCC"))
+        c.setStrokeColor(HexColor("#000000") if is_mono else HexColor("#CCCCCC"))
     c.setLineWidth(0.5)
     c.rect(x, y, lw, lh)
 
     sx = x + 3*mm + qs + 2*mm
-    c.setStrokeColor(HexColor("#444444") if inverse else HexColor("#E0E0E0"))
+    c.setStrokeColor(HexColor("#FFFFFF") if (inverse and is_mono) else HexColor("#000000") if is_mono else HexColor("#444444") if inverse else HexColor("#E0E0E0"))
     c.setLineWidth(0.3)
     c.line(sx, y+3*mm, sx, y+lh-3*mm)
 
@@ -240,12 +243,19 @@ def draw_label(c, x, y, a, logo_path, tape="36mm", color_mode="bw", owner=""):
 
     tx = sx + 3*mm
 
-    # Colors for text
-    main_color = HexColor("#FFFFFF") if inverse else HexColor("#000000")
-    sub_color = HexColor("#CCCCCC") if inverse else (HexColor("#666666") if is_color else HexColor("#000000"))
-    sn_color = HexColor("#FFFFFF") if inverse else (HexColor("#333333") if is_color else HexColor("#000000"))
-    loc_color = HexColor("#AAAAAA") if inverse else (HexColor("#1B3A5C") if is_color else HexColor("#000000"))
-    inv_color = HexColor("#888888") if inverse else (HexColor("#999999") if is_color else HexColor("#555555"))
+    # Colors for text - mono modes use only pure black/white
+    if is_mono:
+        main_color = HexColor("#FFFFFF") if inverse else HexColor("#000000")
+        sub_color = main_color
+        sn_color = main_color
+        loc_color = main_color
+        inv_color = main_color
+    else:
+        main_color = HexColor("#FFFFFF") if inverse else HexColor("#000000")
+        sub_color = HexColor("#CCCCCC") if inverse else (HexColor("#666666") if is_color else HexColor("#000000"))
+        sn_color = HexColor("#FFFFFF") if inverse else (HexColor("#333333") if is_color else HexColor("#000000"))
+        loc_color = HexColor("#AAAAAA") if inverse else (HexColor("#1B3A5C") if is_color else HexColor("#000000"))
+        inv_color = HexColor("#888888") if inverse else (HexColor("#999999") if is_color else HexColor("#555555"))
 
     if logo_path and os.path.exists(logo_path):
         lgh = ts["logo_h"] * mm
@@ -256,13 +266,26 @@ def draw_label(c, x, y, a, logo_path, tape="36mm", color_mode="bw", owner=""):
             # Ensure RGBA for alpha handling
             if pil_img.mode != "RGBA":
                 pil_img = pil_img.convert("RGBA")
-            if inverse:
-                # Convert to grayscale then invert for clean white-on-black
+            if inverse and is_mono:
+                # Inverse mono: pure white logo on black background
+                r, g, b, alpha = pil_img.split()
+                gray = PILImage.merge("RGB", (r, g, b)).convert("L")
+                bw = gray.point(lambda p: 255 if p < 128 else 0)  # Invert + threshold
+                pil_img = PILImage.merge("RGBA", (bw, bw, bw, alpha))
+            elif inverse:
+                # Inverse: grayscale inverted
                 r, g, b, alpha = pil_img.split()
                 gray = PILImage.merge("RGB", (r, g, b)).convert("L")
                 inv_gray = ImageOps.invert(gray)
                 pil_img = PILImage.merge("RGBA", (inv_gray, inv_gray, inv_gray, alpha))
+            elif is_mono:
+                # Mono: pure black logo on white background
+                r, g, b, alpha = pil_img.split()
+                gray = PILImage.merge("RGB", (r, g, b)).convert("L")
+                bw = gray.point(lambda p: 0 if p < 128 else 255)  # Threshold to pure B&W
+                pil_img = PILImage.merge("RGBA", (bw, bw, bw, alpha))
             elif not is_color:
+                # B&W: grayscale
                 r, g, b, alpha = pil_img.split()
                 gray = PILImage.merge("RGB", (r, g, b)).convert("L").convert("RGB")
                 pil_img = PILImage.merge("RGBA", (*gray.split(), alpha))
@@ -597,8 +620,8 @@ class App(ctk.CTk):
 
         # Color mode
         ctk.CTkLabel(grid, text=self.t("color_mode_label")).grid(row=5, column=0, sticky="w", pady=6)
-        color_values = [self.t("color_bw"), self.t("color_color"), self.t("color_inverse")]
-        color_map = {"bw": self.t("color_bw"), "color": self.t("color_color"), "inverse": self.t("color_inverse")}
+        color_values = [self.t("color_bw"), self.t("color_mono"), self.t("color_color"), self.t("color_inverse"), self.t("color_inverse_mono")]
+        color_map = {"bw": self.t("color_bw"), "mono": self.t("color_mono"), "color": self.t("color_color"), "inverse": self.t("color_inverse"), "inverse_mono": self.t("color_inverse_mono")}
         # Backward compat: old bool config
         old_color = self.cfg.get("color")
         if isinstance(old_color, bool):
@@ -633,7 +656,7 @@ class App(ctk.CTk):
         def do_save():
             new_lang = LANGS.get(combo_lang.get(), "fr")
             # Resolve color mode from combo
-            rev_map = {self.t("color_bw"): "bw", self.t("color_color"): "color", self.t("color_inverse"): "inverse"}
+            rev_map = {self.t("color_bw"): "bw", self.t("color_mono"): "mono", self.t("color_color"): "color", self.t("color_inverse"): "inverse", self.t("color_inverse_mono"): "inverse_mono"}
             sel_mode = rev_map.get(combo_color.get(), "bw")
             self.cfg = {
                 "glpi_url": e_url.get().strip().rstrip("/"),
