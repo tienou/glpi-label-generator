@@ -263,33 +263,48 @@ def draw_label(c, x, y, a, logo_path, tape="36mm", color_mode="bw", owner=""):
         try:
             from PIL import Image as PILImage, ImageOps
             pil_img = PILImage.open(logo_path)
-            # Ensure RGBA for alpha handling
-            if pil_img.mode != "RGBA":
+            # Normalize to RGB + separate alpha (handles P, L, LA, CMYK, RGBA, RGB, etc.)
+            has_alpha = pil_img.mode in ("RGBA", "LA", "PA") or (pil_img.mode == "P" and "transparency" in pil_img.info)
+            if has_alpha:
                 pil_img = pil_img.convert("RGBA")
+                alpha = pil_img.split()[3]
+            else:
+                pil_img = pil_img.convert("RGB")
+                alpha = None
+            rgb = pil_img.convert("RGB")
+            gray = rgb.convert("L")
+
             if inverse and is_mono:
-                # Inverse mono: grayscale + invert + threshold to pure B&W
-                rgb = pil_img.convert("RGB")
-                gray = rgb.convert("L")
+                # Inverse mono: invert + threshold, white bg becomes transparent
                 inv_gray = ImageOps.invert(gray)
                 bw = inv_gray.point(lambda p: 255 if p > 128 else 0)
-                pil_img = PILImage.merge("RGBA", (bw, bw, bw, bw))  # Use as alpha too (black=transparent)
+                if alpha:
+                    final_alpha = PILImage.composite(bw, PILImage.new("L", bw.size, 0), alpha)
+                else:
+                    final_alpha = bw  # white bg -> black alpha -> transparent
+                pil_img = PILImage.merge("RGBA", (bw, bw, bw, final_alpha))
             elif inverse:
-                # Inverse: grayscale + invert (white bg becomes black, black text becomes white)
-                rgb = pil_img.convert("RGB")
-                gray = rgb.convert("L")
+                # Inverse: grayscale + invert, white bg becomes transparent
                 inv_gray = ImageOps.invert(gray)
-                pil_img = PILImage.merge("RGBA", (inv_gray, inv_gray, inv_gray, inv_gray))
+                if alpha:
+                    final_alpha = PILImage.composite(inv_gray, PILImage.new("L", inv_gray.size, 0), alpha)
+                else:
+                    final_alpha = inv_gray
+                pil_img = PILImage.merge("RGBA", (inv_gray, inv_gray, inv_gray, final_alpha))
             elif is_mono:
-                # Mono: pure black logo on white background
-                r, g, b, alpha = pil_img.split()
-                gray = PILImage.merge("RGB", (r, g, b)).convert("L")
-                bw = gray.point(lambda p: 0 if p < 128 else 255)  # Threshold to pure B&W
-                pil_img = PILImage.merge("RGBA", (bw, bw, bw, alpha))
+                # Mono: pure black/white, preserve transparency
+                bw = gray.point(lambda p: 0 if p < 128 else 255)
+                a_ch = alpha if alpha else PILImage.new("L", bw.size, 255)
+                pil_img = PILImage.merge("RGBA", (bw, bw, bw, a_ch))
             elif not is_color:
-                # B&W: grayscale
-                r, g, b, alpha = pil_img.split()
-                gray = PILImage.merge("RGB", (r, g, b)).convert("L").convert("RGB")
-                pil_img = PILImage.merge("RGBA", (*gray.split(), alpha))
+                # B&W: grayscale, preserve transparency
+                a_ch = alpha if alpha else PILImage.new("L", gray.size, 255)
+                pil_img = PILImage.merge("RGBA", (gray, gray, gray, a_ch))
+            else:
+                # Color: just ensure RGBA for mask="auto"
+                a_ch = alpha if alpha else PILImage.new("L", rgb.size, 255)
+                r, g, b = rgb.split()
+                pil_img = PILImage.merge("RGBA", (r, g, b, a_ch))
             buf_logo = io.BytesIO()
             pil_img.save(buf_logo, format="PNG")
             buf_logo.seek(0)
