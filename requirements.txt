@@ -1,0 +1,6 @@
+customtkinter
+requests
+qrcode[pil]
+reportlab
+Pillow
+pyinstaller
