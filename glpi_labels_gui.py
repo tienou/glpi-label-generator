@@ -555,6 +555,15 @@ class App(ctk.CTk):
                 parent=win, title=self.t("choose_logo"),
                 filetypes=[("Images", "*.jpg *.jpeg *.png *.bmp"), ("Tous/*", "*.*")])
             if path:
+                # Copy logo to AppData so it persists
+                import shutil
+                ext = os.path.splitext(path)[1]
+                dest = os.path.join(CONFIG_DIR, f"logo{ext}")
+                try:
+                    shutil.copy2(path, dest)
+                    path = dest
+                except Exception:
+                    pass  # Fallback to original path
                 e_logo.delete(0, "end")
                 e_logo.insert(0, path)
 
