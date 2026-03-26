@@ -15,13 +15,23 @@ from reportlab.lib.utils import ImageReader
 from reportlab.lib.colors import HexColor
 
 # === PATHS ===
+def get_config_dir():
+    """Config in %APPDATA%/GLPI_Labels/ so it survives exe updates."""
+    appdata = os.environ.get("APPDATA", "")
+    if appdata:
+        d = os.path.join(appdata, "GLPI_Labels")
+    else:
+        d = os.path.join(os.path.expanduser("~"), ".glpi_labels")
+    os.makedirs(d, exist_ok=True)
+    return d
+
 def get_app_dir():
     """Dossier de l'exe ou du script"""
     if getattr(sys, 'frozen', False):
         return os.path.dirname(sys.executable)
     return os.path.dirname(os.path.abspath(__file__))
 
-CONFIG_PATH = os.path.join(get_app_dir(), "glpi_config.json")
+CONFIG_PATH = os.path.join(get_config_dir(), "glpi_config.json")
 
 # === LABEL LAYOUT (mm) ===
 LABEL_W = 80 * mm
@@ -109,7 +119,18 @@ T = {
 }
 
 # === CONFIG ===
+def _migrate_old_config():
+    """Move config from old location (next to exe) to %APPDATA%."""
+    old_path = os.path.join(get_app_dir(), "glpi_config.json")
+    if os.path.exists(old_path) and not os.path.exists(CONFIG_PATH):
+        try:
+            import shutil
+            shutil.move(old_path, CONFIG_PATH)
+        except:
+            pass
+
 def load_config():
+    _migrate_old_config()
     defaults = {"glpi_url": "", "app_token": "", "user_token": "", "logo_path": "", "lang": "fr"}
     if os.path.exists(CONFIG_PATH):
         try:
