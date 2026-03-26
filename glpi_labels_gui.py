@@ -249,24 +249,28 @@ def draw_label(c, x, y, a, logo_path, tape="36mm", color_mode="bw", owner=""):
     if logo_path and os.path.exists(logo_path):
         lgh = ts["logo_h"] * mm
         lgw = lgh * 2000/1444
-        from PIL import Image as PILImage, ImageOps
-        pil_img = PILImage.open(logo_path).convert("RGBA")
-        if inverse:
-            # Invert RGB channels, keep alpha
-            r, g, b, alpha = pil_img.split()
-            rgb = ImageOps.invert(PILImage.merge("RGB", (r, g, b)))
-            pil_img = PILImage.merge("RGBA", (*rgb.split(), alpha))
-        elif not is_color:
-            # Convert to grayscale, keep alpha
-            r, g, b, alpha = pil_img.split()
-            gray = PILImage.merge("RGB", (r, g, b)).convert("L").convert("RGB")
-            pil_img = PILImage.merge("RGBA", (*gray.split(), alpha))
-        buf_logo = io.BytesIO()
-        pil_img.save(buf_logo, format="PNG")
-        buf_logo.seek(0)
-        logo_img = ImageReader(buf_logo)
-        c.drawImage(logo_img, x+lw-lgw-2*mm, y+lh-lgh-1*mm, lgw, lgh,
-                    preserveAspectRatio=True, mask="auto")
+        try:
+            from PIL import Image as PILImage, ImageOps
+            pil_img = PILImage.open(logo_path)
+            # Ensure RGBA for alpha handling
+            if pil_img.mode != "RGBA":
+                pil_img = pil_img.convert("RGBA")
+            if inverse:
+                r, g, b, alpha = pil_img.split()
+                rgb = ImageOps.invert(PILImage.merge("RGB", (r, g, b)))
+                pil_img = PILImage.merge("RGBA", (*rgb.split(), alpha))
+            elif not is_color:
+                r, g, b, alpha = pil_img.split()
+                gray = PILImage.merge("RGB", (r, g, b)).convert("L").convert("RGB")
+                pil_img = PILImage.merge("RGBA", (*gray.split(), alpha))
+            buf_logo = io.BytesIO()
+            pil_img.save(buf_logo, format="PNG")
+            buf_logo.seek(0)
+            logo_img = ImageReader(buf_logo)
+            c.drawImage(logo_img, x+lw-lgw-2*mm, y+lh-lgh-1*mm, lgw, lgh,
+                        preserveAspectRatio=True, mask="auto")
+        except Exception:
+            pass  # Skip logo if unreadable
 
     # Name
     c.setFont("Helvetica-Bold", ts["font_name"])
