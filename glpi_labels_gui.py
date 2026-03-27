@@ -295,8 +295,8 @@ def draw_label(c, x, y, a, logo_path, tape="36mm", color_mode="bw", owner="", sh
                     final_alpha = mask
                 pil_img = PILImage.merge("RGBA", (white, white, white, final_alpha))
             elif is_mono:
-                # Mono: pure black/white, preserve transparency
-                bw = gray.point(lambda p: 0 if p < 128 else 255)
+                # Mono: everything non-white becomes black, white bg stays white
+                bw = gray.point(lambda p: 255 if p > 240 else 0)
                 a_ch = alpha if alpha else PILImage.new("L", bw.size, 255)
                 pil_img = PILImage.merge("RGBA", (bw, bw, bw, a_ch))
             elif not is_color:
