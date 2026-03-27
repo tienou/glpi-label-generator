@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 """
 GLPI Inventory Label Generator - Genesienne Groupe
 Application GUI avec CustomTkinter
@@ -127,9 +128,9 @@ T = {
     "color_inverse":    {"fr": "Inverse (blanc sur noir)", "en": "Inverse (white on black)", "es": "Inverso (blanco sobre negro)", "de": "Invertiert (weiss auf schwarz)"},
     "color_inverse_mono":{"fr": "Inverse Mono", "en": "Inverse Mono", "es": "Inverso Mono", "de": "Invertiert Mono"},
     "show_date_label":  {"fr": "Afficher date inventaire", "en": "Show inventory date", "es": "Mostrar fecha inventario", "de": "Inventardatum anzeigen"},
-    "owner_label":      {"fr": "Propriete de :", "en": "Property of:", "es": "Propiedad de:", "de": "Eigentum von:"},
+    "owner_label":      {"fr": "Propriété de :", "en": "Property of:", "es": "Propiedad de:", "de": "Eigentum von:"},
     "owner_placeholder":{"fr": "ex: Groupe Genesienne", "en": "e.g. My Company", "es": "ej: Mi Empresa", "de": "z.B. Meine Firma"},
-    "owner_prefix":     {"fr": "Propriete de :", "en": "Property of:", "es": "Propiedad de:", "de": "Eigentum von:"},
+    "owner_prefix":     {"fr": "Propriété de :", "en": "Property of:", "es": "Propiedad de:", "de": "Eigentum von:"},
 }
 
 # === CONFIG ===
