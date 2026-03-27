@@ -205,7 +205,7 @@ class GLPI:
 
 # === QR CODE ===
 def make_qr(url, inverse=False):
-    q = qrcode.QRCode(error_correction=qrcode.constants.ERROR_CORRECT_L, box_size=10, border=1)
+    q = qrcode.QRCode(error_correction=qrcode.constants.ERROR_CORRECT_M, box_size=10, border=4)
     q.add_data(url)
     q.make(fit=True)
     fill = "white" if inverse else "black"
