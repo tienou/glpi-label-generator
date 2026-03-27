@@ -196,6 +196,19 @@ class GLPI:
         r.raise_for_status()
         return r.json()
 
+    def get_qr(self, item_type, item_id):
+        """Download QR code image directly from GLPI plugin"""
+        try:
+            r = self.session.get(
+                f"{self.url}/plugins/qrcode/front/qrcode.php",
+                params={"id": item_id, "type": item_type},
+                timeout=10)
+            if r.status_code == 200 and r.headers.get("content-type", "").startswith("image"):
+                return r.content
+        except:
+            pass
+        return None
+
     def stop(self):
         try:
             self.session.get(f"{self.url}/apirest.php/killSession", timeout=5)
@@ -204,7 +217,21 @@ class GLPI:
         self.session.close()
 
 # === QR CODE ===
-def make_qr(url, inverse=False):
+_qr_cache = {}
+
+def make_qr(url, inverse=False, glpi_qr_data=None):
+    from PIL import Image as PILImage, ImageOps
+    if glpi_qr_data:
+        # Use QR code downloaded from GLPI
+        pil_img = PILImage.open(io.BytesIO(glpi_qr_data)).convert("RGB")
+        if inverse:
+            pil_img = ImageOps.invert(pil_img)
+        pil_img = pil_img.resize((300, 300), PILImage.NEAREST)
+        buf = io.BytesIO()
+        pil_img.save(buf, format="PNG")
+        buf.seek(0)
+        return ImageReader(buf)
+    # Fallback: generate locally
     q = qrcode.QRCode(error_correction=qrcode.constants.ERROR_CORRECT_M, box_size=10, border=4)
     q.add_data(url)
     q.make(fit=True)
@@ -241,7 +268,7 @@ def draw_label(c, x, y, a, logo_path, tape="36mm", color_mode="bw", owner="", sh
     c.setLineWidth(0.3)
     c.line(sx, y+3*mm, sx, y+lh-3*mm)
 
-    c.drawImage(make_qr(a["url"], inverse=inverse), x+3*mm, y+(lh-qs)/2, qs, qs)
+    c.drawImage(make_qr(a["url"], inverse=inverse, glpi_qr_data=a.get("qr_data")), x+3*mm, y+(lh-qs)/2, qs, qs)
 
     tx = sx + 3*mm
 
@@ -389,13 +416,17 @@ def make_pdf(assets, path, logo_path, tape="36mm", color_mode="bw", owner="", sh
     return len(assets)
 
 # === ITEM TO ASSET ===
-def item_to_asset(item, type_key, glpi_url, app=None):
+def item_to_asset(item, type_key, glpi_url, app=None, glpi=None):
     at = ASSET_TYPES[type_key]
     type_label = app._asset_type_label(type_key) if app else type_key
     no_name = app.t("no_name") if app else "Sans nom"
     # Extract year from date_creation (format: "2023-05-12 10:30:00")
     date_raw = item.get("date_creation", "") or ""
     date_inv = date_raw[:10] if date_raw else ""  # "2023-05-12"
+    # Try to download QR code from GLPI plugin
+    qr_data = None
+    if glpi:
+        qr_data = glpi.get_qr(type_key, item["id"])
     return {
         "id": item["id"],
         "name": item.get("name", no_name),
@@ -405,6 +436,7 @@ def item_to_asset(item, type_key, glpi_url, app=None):
         "location": item.get("completename", item.get("locations_name", "")),
         "date_inv": date_inv,
         "url": f"{glpi_url}/{at['form']}?id={item['id']}",
+        "qr_data": qr_data,
     }
 
 # === DEMO DATA ===
@@ -774,7 +806,7 @@ class App(ctk.CTk):
                     for type_key in types_to_fetch:
                         try:
                             item = g.get_one(type_key, item_id)
-                            assets.append(item_to_asset(item, type_key, cfg["glpi_url"], self))
+                            assets.append(item_to_asset(item, type_key, cfg["glpi_url"], self, glpi=g))
                             self._log(f"  [OK] {type_key} #{item_id}: {item.get('name', '?')}")
                             found = True
                             break
@@ -795,7 +827,7 @@ class App(ctk.CTk):
                     results = pool.map(fetch_type, types_to_fetch)
                     for batch in results:
                         for item, type_key in batch:
-                            assets.append(item_to_asset(item, type_key, cfg["glpi_url"], self))
+                            assets.append(item_to_asset(item, type_key, cfg["glpi_url"], self, glpi=g))
                 return assets
         except requests.exceptions.HTTPError as e:
             status = e.response.status_code if e.response is not None else "?"
