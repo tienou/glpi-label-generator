@@ -210,7 +210,8 @@ def make_qr(url, inverse=False):
     q.make(fit=True)
     fill = "white" if inverse else "black"
     back = "black" if inverse else "white"
-    img = q.make_image(fill_color=fill, back_color=back).resize((300, 300))
+    from PIL import Image as PILImage
+    img = q.make_image(fill_color=fill, back_color=back).resize((300, 300), PILImage.NEAREST)
     buf = io.BytesIO()
     img.save(buf, format="PNG")
     buf.seek(0)
