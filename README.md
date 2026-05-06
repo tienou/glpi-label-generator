@@ -13,7 +13,7 @@ Inventory label generator for GLPI with QR codes. Portable desktop application w
 - **3 tape sizes**: 25mm, 36mm, 50mm — layout adapts automatically
 - **5 color modes**: Color, Black & White, Monochrome, Inverse, Inverse Mono
 - **First inventory date** — shows asset age at a glance
-- Filters by type, location, name, or specific IDs
+- Filters by type, location, name, user or specific IDs
 - Built-in demo mode with sample data (no GLPI instance required)
 - Multi-language support: Francais, English, Espanol, Deutsch
 - Persistent configuration saved in %APPDATA% (survives exe updates)
@@ -92,6 +92,7 @@ A command-line version is also available (`glpi_labels.py`):
 python glpi_labels.py --lieu Dunkerque --type Computer
 python glpi_labels.py --id 3,5,8
 python glpi_labels.py --list
+python glpi_labels.py --list --rest-debug
 ```
 
 ## Label Format
