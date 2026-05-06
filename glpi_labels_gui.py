@@ -6,7 +6,7 @@ Application GUI avec CustomTkinter
 """
 
 import customtkinter as ctk
-import requests, qrcode, io, os, sys, json, threading
+import requests, qrcode, io, os, sys, json, threading, re
 from concurrent.futures import ThreadPoolExecutor
 from tkinter import filedialog, messagebox
 from reportlab.lib.pagesizes import A4
@@ -87,6 +87,8 @@ T = {
     "location_ph":      {"fr": "Filtrer par lieu (contient)", "en": "Filter by location (contains)", "es": "Filtrar por lugar (contiene)", "de": "Nach Standort filtern (enthalt)"},
     "name_label":       {"fr": "Nom :", "en": "Name:", "es": "Nombre:", "de": "Name:"},
     "name_ph":          {"fr": "Filtrer par nom (contient)", "en": "Filter by name (contains)", "es": "Filtrar por nombre (contiene)", "de": "Nach Name filtern (enthalt)"},
+    "user_label":       {"fr": "Utilisateur :", "en": "User:", "es": "Usuario:", "de": "Benutzer:"},
+    "user_ph":          {"fr": "Filtrer par utilisateur (contient)", "en": "Filter by user (contains)", "es": "Filtrar por usuario (contiene)", "de": "Nach Benutzer filtern (enthalt)"},
     # Buttons
     "list_assets":      {"fr": "Lister les assets", "en": "List assets", "es": "Listar activos", "de": "Assets auflisten"},
     "generate_pdf":     {"fr": "Generer le PDF", "en": "Generate PDF", "es": "Generar PDF", "de": "PDF erstellen"},
@@ -116,6 +118,7 @@ T = {
     "col_type":         {"fr": "Type", "en": "Type", "es": "Tipo", "de": "Typ"},
     "col_name":         {"fr": "Nom", "en": "Name", "es": "Nombre", "de": "Name"},
     "col_location":     {"fr": "Lieu", "en": "Location", "es": "Lugar", "de": "Standort"},
+    "col_user":         {"fr": "Utilisateur", "en": "User", "es": "Usuario", "de": "Benutzer"},
     "no_name":          {"fr": "Sans nom", "en": "No name", "es": "Sin nombre", "de": "Ohne Name"},
     "auth_bad_request": {"fr": "Echec authentification (400). Verifiez App Token et User Token dans Parametres.", "en": "Authentication failed (400). Check App Token and User Token in Settings.", "es": "Error de autenticacion (400). Verifique App Token y User Token en Ajustes.", "de": "Authentifizierung fehlgeschlagen (400). Prufen Sie App Token und User Token in Einstellungen."},
     "auth_unauthorized":{"fr": "Token invalide ou expire (401). Regenerez vos tokens dans GLPI.", "en": "Invalid or expired token (401). Regenerate your tokens in GLPI.", "es": "Token invalido o expirado (401). Regenere sus tokens en GLPI.", "de": "Ungueltiger oder abgelaufener Token (401). Erneuern Sie Ihre Tokens in GLPI."},
@@ -131,6 +134,7 @@ T = {
     "owner_label":      {"fr": "Propriété de :", "en": "Property of:", "es": "Propiedad de:", "de": "Eigentum von:"},
     "owner_placeholder":{"fr": "ex: Groupe Genesienne", "en": "e.g. My Company", "es": "ej: Mi Empresa", "de": "z.B. Meine Firma"},
     "owner_prefix":     {"fr": "Propriété de :", "en": "Property of:", "es": "Propiedad de:", "de": "Eigentum von:"},
+    "rest_debug_label": {"fr": "Debug REST (logs complets)", "en": "REST debug (full logs)", "es": "Debug REST (logs completos)", "de": "REST-Debug (vollstaendige Logs)"},
 }
 
 # === CONFIG ===
@@ -146,7 +150,7 @@ def _migrate_old_config():
 
 def load_config():
     _migrate_old_config()
-    defaults = {"glpi_url": "", "app_token": "", "user_token": "", "logo_path": "", "lang": "fr", "tape_size": "36mm", "color_mode": "bw", "owner": "", "show_date": True}
+    defaults = {"glpi_url": "", "app_token": "", "user_token": "", "logo_path": "", "lang": "fr", "tape_size": "36mm", "color_mode": "bw", "owner": "", "show_date": True, "rest_debug": False}
     if os.path.exists(CONFIG_PATH):
         try:
             with open(CONFIG_PATH, "r") as f:
@@ -162,24 +166,69 @@ def save_config(cfg):
 
 # === GLPI API ===
 class GLPI:
-    def __init__(self, url, app_token, user_token):
+    SENSITIVE_KEYS = {
+        "session_token", "token", "app_token", "user_token",
+        "authorization", "app-token", "session-token", "password",
+    }
+
+    def __init__(self, url, app_token, user_token, response_logger=None):
         self.url = url.rstrip("/")
         self.app_token = app_token
         self.user_token = user_token
+        self.response_logger = response_logger
+        self.location_cache = {}
+        self.user_cache = {}
         self.session = requests.Session()
         self.session.headers["App-Token"] = app_token
+
+    def _sanitize_for_log(self, value):
+        """Mask potentially sensitive values before writing them in GUI logs."""
+        if isinstance(value, dict):
+            out = {}
+            for k, v in value.items():
+                key = str(k).lower()
+                if key in self.SENSITIVE_KEYS or "token" in key or "auth" in key:
+                    out[k] = "***"
+                else:
+                    out[k] = self._sanitize_for_log(v)
+            return out
+        if isinstance(value, list):
+            return [self._sanitize_for_log(v) for v in value]
+        if isinstance(value, str):
+            # Mask token-like patterns in plain text payloads.
+            value = re.sub(r"(?i)(session[_-]?token\s*[=:]\s*)([^,\s\"']+)", r"\1***", value)
+            value = re.sub(r"(?i)(authorization\s*[=:]\s*)([^,\s\"']+)", r"\1***", value)
+            return value
+        return value
+
+    def _log_rest(self, endpoint, status, payload):
+        if not self.response_logger:
+            return
+        try:
+            safe_payload = self._sanitize_for_log(payload)
+            body = json.dumps(safe_payload, ensure_ascii=True)
+        except Exception:
+            body = str(self._sanitize_for_log(payload))
+        self.response_logger(f"[REST] {endpoint} -> HTTP {status}")
+        self.response_logger(f"       {body}")
 
     def start(self):
         r = self.session.get(f"{self.url}/apirest.php/initSession",
             headers={"Authorization": f"user_token {self.user_token}"}, timeout=10)
         r.raise_for_status()
-        self.session.headers["Session-Token"] = r.json()["session_token"]
+        body = r.json()
+        self._log_rest("initSession", r.status_code, body)
+        self.session.headers["Session-Token"] = body["session_token"]
 
     def get_all(self, ep):
         out, start = [], 0
         while True:
             r = self.session.get(f"{self.url}/apirest.php/{ep}",
                 params={"range": f"{start}-{start+199}", "sort": "name", "order": "ASC"}, timeout=15)
+            if r.status_code in (200, 206):
+                self._log_rest(f"{ep}?range={start}-{start+199}", r.status_code, r.json())
+            else:
+                self._log_rest(f"{ep}?range={start}-{start+199}", r.status_code, r.text)
             if r.status_code not in (200, 206):
                 break
             b = r.json()
@@ -194,11 +243,43 @@ class GLPI:
     def get_one(self, ep, item_id):
         r = self.session.get(f"{self.url}/apirest.php/{ep}/{item_id}", timeout=10)
         r.raise_for_status()
-        return r.json()
+        body = r.json()
+        self._log_rest(f"{ep}/{item_id}", r.status_code, body)
+        return body
+
+    def get_location_name(self, location_id):
+        """Resolve a location ID to a readable name using GLPI Location endpoint."""
+        if not location_id:
+            return ""
+        if location_id in self.location_cache:
+            return self.location_cache[location_id]
+        try:
+            item = self.get_one("Location", location_id)
+            name = item.get("completename") or item.get("name") or ""
+        except Exception:
+            name = ""
+        self.location_cache[location_id] = name
+        return name
+
+    def get_user_name(self, user_id):
+        """Resolve a user ID to a readable display name using GLPI User endpoint."""
+        if not user_id:
+            return ""
+        if user_id in self.user_cache:
+            return self.user_cache[user_id]
+        try:
+            item = self.get_one("User", user_id)
+            fullname = f"{(item.get('firstname') or '').strip()} {(item.get('realname') or '').strip()}".strip()
+            name = fullname or item.get("name") or ""
+        except Exception:
+            name = ""
+        self.user_cache[user_id] = name
+        return name
 
     def stop(self):
         try:
-            self.session.get(f"{self.url}/apirest.php/killSession", timeout=5)
+            r = self.session.get(f"{self.url}/apirest.php/killSession", timeout=5)
+            self._log_rest("killSession", r.status_code, r.text)
         except:
             pass
         self.session.close()
@@ -390,20 +471,39 @@ def make_pdf(assets, path, logo_path, tape="36mm", color_mode="bw", owner="", sh
     return len(assets)
 
 # === ITEM TO ASSET ===
-def item_to_asset(item, type_key, glpi_url, app=None):
+def item_to_asset(item, type_key, glpi_url, app=None, glpi=None):
     at = ASSET_TYPES[type_key]
     type_label = app._asset_type_label(type_key) if app else type_key
     no_name = app.t("no_name") if app else "Sans nom"
     # Extract year from date_creation (format: "2023-05-12 10:30:00")
     date_raw = item.get("date_creation", "") or ""
     date_inv = date_raw[:10] if date_raw else ""  # "2023-05-12"
+    location = item.get("completename") or item.get("locations_name") or ""
+    if not location and glpi is not None:
+        raw_loc_id = item.get("locations_id", item.get("location_id", ""))
+        try:
+            loc_id = int(raw_loc_id)
+        except (TypeError, ValueError):
+            loc_id = 0
+        if loc_id > 0:
+            location = glpi.get_location_name(loc_id)
+    user_name = item.get("users_name") or item.get("user_name") or ""
+    if not user_name and glpi is not None:
+        raw_user_id = item.get("users_id", item.get("user_id", ""))
+        try:
+            user_id = int(raw_user_id)
+        except (TypeError, ValueError):
+            user_id = 0
+        if user_id > 0:
+            user_name = glpi.get_user_name(user_id)
     return {
         "id": item["id"],
         "name": item.get("name", no_name),
         "serial": item.get("serial", ""),
         "otherserial": item.get("otherserial", ""),
         "type_label": type_label,
-        "location": item.get("completename", item.get("locations_name", "")),
+        "location": location,
+        "user_name": user_name,
         "date_inv": date_inv,
         "url": f"{glpi_url}/{at['form']}?id={item['id']}",
     }
@@ -414,13 +514,13 @@ def get_demo_data(glpi_url="https://genesienne.fr33.glpi-network.cloud", app=Non
     monitor = app._asset_type_label("Monitor") if app else "Ecran"
     return [
         {"id":3,"name":"Automatisme-2","serial":"JXY51X2","type_label":computer,
-         "location":"Andrezieux","otherserial":"","date_inv":"2021-03-15",
+         "location":"Andrezieux","user_name":"Admin GLPI","otherserial":"","date_inv":"2021-03-15",
          "url":f"{glpi_url}/front/computer.form.php?id=3"},
         {"id":5,"name":"PC-BUREAU-DG","serial":"ABC123DEF456","type_label":computer,
-         "location":"Chambon","otherserial":"INV-2024-001","date_inv":"2024-01-10",
+         "location":"Chambon","user_name":"Marie Durand","otherserial":"INV-2024-001","date_inv":"2024-01-10",
          "url":f"{glpi_url}/front/computer.form.php?id=5"},
         {"id":12,"name":"DELL-U2722D","serial":"CN0F5XYZ789","type_label":monitor,
-         "location":"Chambon","otherserial":"INV-2024-012","date_inv":"2023-06-22",
+         "location":"Chambon","user_name":"Atelier","otherserial":"INV-2024-012","date_inv":"2023-06-22",
          "url":f"{glpi_url}/front/monitor.form.php?id=12"},
         {"id":8,"name":"PC-ATELIER-01","serial":"HJK789LMN012","type_label":computer,
          "location":"Sicaf","otherserial":"","date_inv":"2019-11-05",
@@ -522,6 +622,11 @@ class App(ctk.CTk):
         self.entry_nom = ctk.CTkEntry(fgrid, placeholder_text=self.t("name_ph"))
         self.entry_nom.grid(row=1, column=3, sticky="ew", padx=(10, 0), pady=3)
 
+        self.lbl_user = ctk.CTkLabel(fgrid, text=self.t("user_label"))
+        self.lbl_user.grid(row=2, column=0, sticky="w", pady=3)
+        self.entry_user = ctk.CTkEntry(fgrid, placeholder_text=self.t("user_ph"))
+        self.entry_user.grid(row=2, column=1, columnspan=3, sticky="ew", padx=(10, 0), pady=3)
+
         # === ACTION BUTTONS ===
         act_frame = ctk.CTkFrame(self.main_frame, fg_color="transparent")
         act_frame.pack(fill="x", pady=(0, 10))
@@ -534,6 +639,15 @@ class App(ctk.CTk):
                                      font=ctk.CTkFont(size=14, weight="bold"), height=40, width=200,
                                      fg_color="#1565C0", hover_color="#0D47A1")
         self.btn_pdf.pack(side="left", padx=(0, 10))
+
+        self.rest_debug_var = ctk.BooleanVar(value=bool(self.cfg.get("rest_debug", False)))
+        self.chk_rest_debug = ctk.CTkCheckBox(
+            act_frame,
+            text=self.t("rest_debug_label"),
+            variable=self.rest_debug_var,
+            command=self._toggle_rest_debug,
+        )
+        self.chk_rest_debug.pack(side="left", padx=(0, 10))
 
         self.lbl_count = ctk.CTkLabel(act_frame, text="", font=ctk.CTkFont(size=13))
         self.lbl_count.pack(side="left", padx=10)
@@ -556,8 +670,11 @@ class App(ctk.CTk):
         self.entry_lieu.configure(placeholder_text=self.t("location_ph"))
         self.lbl_nom.configure(text=self.t("name_label"))
         self.entry_nom.configure(placeholder_text=self.t("name_ph"))
+        self.lbl_user.configure(text=self.t("user_label"))
+        self.entry_user.configure(placeholder_text=self.t("user_ph"))
         self.btn_list.configure(text=self.t("list_assets"))
         self.btn_pdf.configure(text=self.t("generate_pdf"))
+        self.chk_rest_debug.configure(text=self.t("rest_debug_label"))
 
     def _update_config_status(self):
         """Update the config status indicator in the header."""
@@ -694,6 +811,7 @@ class App(ctk.CTk):
                 "color_mode": sel_mode,
                 "owner": e_owner.get().strip(),
                 "show_date": chk_date_var.get(),
+                "rest_debug": bool(self.rest_debug_var.get()),
             }
             save_config(self.cfg)
             self.lang = new_lang
@@ -713,11 +831,26 @@ class App(ctk.CTk):
         self.log_box.insert("end", msg + "\n")
         self.log_box.see("end")
 
+    def _log_rest_response(self, msg):
+        """Relay REST debug messages into the GUI log box."""
+        self._log(msg)
+
+    def _toggle_rest_debug(self):
+        """Persist REST debug toggle from the main UI checkbox."""
+        self.cfg["rest_debug"] = bool(self.rest_debug_var.get())
+        try:
+            save_config(self.cfg)
+        except Exception:
+            pass
+
     def _clear_log(self):
         self.log_box.delete("1.0", "end")
 
     def _is_demo_mode(self):
         return not self.cfg.get("app_token") or not self.cfg.get("user_token")
+
+    def _is_rest_debug_enabled(self):
+        return bool(self.rest_debug_var.get())
 
     def _get_filters(self):
         type_val = self.combo_type.get()
@@ -727,6 +860,7 @@ class App(ctk.CTk):
             "ids": self.entry_ids.get().strip(),
             "lieu": self.entry_lieu.get().strip(),
             "nom": self.entry_nom.get().strip(),
+            "user": self.entry_user.get().strip(),
         }
 
     def _apply_filters(self, assets, filters):
@@ -744,6 +878,8 @@ class App(ctk.CTk):
             result = [a for a in result if filters["lieu"].lower() in (a.get("location", "") or "").lower()]
         if filters["nom"]:
             result = [a for a in result if filters["nom"].lower() in (a.get("name", "") or "").lower()]
+        if filters["user"]:
+            result = [a for a in result if filters["user"].lower() in (a.get("user_name", "") or "").lower()]
         result.sort(key=lambda a: a["name"])
         return result
 
@@ -758,7 +894,8 @@ class App(ctk.CTk):
 
         # Production mode
         self._log(f"{self.t('connecting')} {cfg['glpi_url']}...")
-        g = GLPI(cfg["glpi_url"], cfg["app_token"], cfg["user_token"])
+        rest_logger = self._log_rest_response if self._is_rest_debug_enabled() else None
+        g = GLPI(cfg["glpi_url"], cfg["app_token"], cfg["user_token"], response_logger=rest_logger)
         connected = False
         try:
             g.start()
@@ -775,7 +912,7 @@ class App(ctk.CTk):
                     for type_key in types_to_fetch:
                         try:
                             item = g.get_one(type_key, item_id)
-                            assets.append(item_to_asset(item, type_key, cfg["glpi_url"], self))
+                            assets.append(item_to_asset(item, type_key, cfg["glpi_url"], self, g))
                             self._log(f"  [OK] {type_key} #{item_id}: {item.get('name', '?')}")
                             found = True
                             break
@@ -796,7 +933,7 @@ class App(ctk.CTk):
                     results = pool.map(fetch_type, types_to_fetch)
                     for batch in results:
                         for item, type_key in batch:
-                            assets.append(item_to_asset(item, type_key, cfg["glpi_url"], self))
+                            assets.append(item_to_asset(item, type_key, cfg["glpi_url"], self, g))
                 return assets
         except requests.exceptions.HTTPError as e:
             status = e.response.status_code if e.response is not None else "?"
@@ -817,12 +954,13 @@ class App(ctk.CTk):
 
     def _display_assets(self, assets):
         """Display assets in the log box as a table."""
-        self._log(f"\n{'ID':>5}  {self.t('col_type'):<12} {self.t('col_name'):<22} {'S/N':<18} {self.t('col_location')}")
-        self._log("-" * 75)
+        self._log(f"\n{'ID':>5}  {self.t('col_type'):<12} {self.t('col_name'):<22} {'S/N':<18} {self.t('col_location'):<18} {self.t('col_user')}")
+        self._log("-" * 98)
         for a in assets:
             sn = (a.get("serial", "") or "N/A")[:16]
             loc = (a.get("location", "") or "")[:18]
-            self._log(f"{a['id']:>5}  {a['type_label']:<12} {a['name']:<22} {sn:<18} {loc}")
+            usr = (a.get("user_name", "") or "")[:18]
+            self._log(f"{a['id']:>5}  {a['type_label']:<12} {a['name']:<22} {sn:<18} {loc:<18} {usr}")
         self._log(f"\n  {self.t('total')}: {len(assets)} {self.t('assets_count')}")
 
     def _set_buttons_state(self, state):

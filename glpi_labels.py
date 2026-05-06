@@ -36,7 +36,7 @@ USAGE:
         python3 glpi_labels.py --list --lieu Sicaf
 """
 
-import requests, qrcode, io, os, sys, argparse
+import requests, qrcode, io, os, sys, argparse, json, re
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import mm
 from reportlab.pdfgen import canvas
@@ -64,11 +64,53 @@ ASSET_TYPES = {
 
 # === API ===
 class GLPI:
-    def __init__(s): s.tok = None
+    SENSITIVE_KEYS = {
+        "session_token", "token", "app_token", "user_token",
+        "authorization", "app-token", "session-token", "password",
+    }
+
+    def __init__(s, rest_debug=False):
+        s.tok = None
+        s.rest_debug = rest_debug
+        s.location_cache = {}
+        s.user_cache = {}
+
+    def _sanitize_for_log(s, value):
+        if isinstance(value, dict):
+            out = {}
+            for k, v in value.items():
+                key = str(k).lower()
+                if key in s.SENSITIVE_KEYS or "token" in key or "auth" in key:
+                    out[k] = "***"
+                else:
+                    out[k] = s._sanitize_for_log(v)
+            return out
+        if isinstance(value, list):
+            return [s._sanitize_for_log(v) for v in value]
+        if isinstance(value, str):
+            value = re.sub(r"(?i)(session[_-]?token\s*[=:]\s*)([^,\s\"']+)", r"\1***", value)
+            value = re.sub(r"(?i)(authorization\s*[=:]\s*)([^,\s\"']+)", r"\1***", value)
+            return value
+        return value
+
+    def _log_rest(s, endpoint, status, payload):
+        if not s.rest_debug:
+            return
+        try:
+            body = json.dumps(s._sanitize_for_log(payload), ensure_ascii=True)
+        except Exception:
+            body = str(s._sanitize_for_log(payload))
+        print(f"[REST] {endpoint} -> HTTP {status}")
+        print(f"       {body}")
+
     def start(s):
         r = requests.get(f"{GLPI_URL}/apirest.php/initSession",
             headers={"App-Token": APP_TOKEN, "Authorization": f"user_token {USER_TOKEN}"})
-        r.raise_for_status(); s.tok = r.json()["session_token"]; print("[OK] Session GLPI")
+        r.raise_for_status()
+        body = r.json()
+        s._log_rest("initSession", r.status_code, body)
+        s.tok = body["session_token"]
+        print("[OK] Session GLPI")
     def _h(s): return {"App-Token": APP_TOKEN, "Session-Token": s.tok}
 
     def get_all(s, ep):
@@ -76,6 +118,10 @@ class GLPI:
         while True:
             r = requests.get(f"{GLPI_URL}/apirest.php/{ep}", headers=s._h(),
                 params={"range": f"{start}-{start+49}", "sort": "name", "order": "ASC"})
+            if r.status_code in (200, 206):
+                s._log_rest(f"{ep}?range={start}-{start+49}", r.status_code, r.json())
+            else:
+                s._log_rest(f"{ep}?range={start}-{start+49}", r.status_code, r.text)
             if r.status_code not in (200, 206): break
             b = r.json()
             if not b: break
@@ -87,10 +133,41 @@ class GLPI:
     def get_one(s, ep, item_id):
         r = requests.get(f"{GLPI_URL}/apirest.php/{ep}/{item_id}", headers=s._h())
         r.raise_for_status()
-        return r.json()
+        body = r.json()
+        s._log_rest(f"{ep}/{item_id}", r.status_code, body)
+        return body
+
+    def get_location_name(s, location_id):
+        if not location_id:
+            return ""
+        if location_id in s.location_cache:
+            return s.location_cache[location_id]
+        try:
+            item = s.get_one("Location", location_id)
+            name = item.get("completename") or item.get("name") or ""
+        except Exception:
+            name = ""
+        s.location_cache[location_id] = name
+        return name
+
+    def get_user_name(s, user_id):
+        if not user_id:
+            return ""
+        if user_id in s.user_cache:
+            return s.user_cache[user_id]
+        try:
+            item = s.get_one("User", user_id)
+            fullname = f"{(item.get('firstname') or '').strip()} {(item.get('realname') or '').strip()}".strip()
+            name = fullname or item.get("name") or ""
+        except Exception:
+            name = ""
+        s.user_cache[user_id] = name
+        return name
 
     def stop(s):
-        try: requests.get(f"{GLPI_URL}/apirest.php/killSession", headers=s._h())
+        try:
+            r = requests.get(f"{GLPI_URL}/apirest.php/killSession", headers=s._h())
+            s._log_rest("killSession", r.status_code, r.text)
         except: pass
 
 # === QR ===
@@ -149,15 +226,36 @@ def make_pdf(assets, path, logo):
     c.save(); print(f"[OK] {path}")
 
 # === ITEM TO ASSET ===
-def item_to_asset(item, type_key):
+def item_to_asset(item, type_key, glpi=None):
     t = ASSET_TYPES[type_key]
+    location = item.get("completename") or item.get("locations_name") or ""
+    if not location and glpi is not None:
+        raw_loc_id = item.get("locations_id", item.get("location_id", ""))
+        try:
+            loc_id = int(raw_loc_id)
+        except (TypeError, ValueError):
+            loc_id = 0
+        if loc_id > 0:
+            location = glpi.get_location_name(loc_id)
+
+    user_name = item.get("users_name") or item.get("user_name") or ""
+    if not user_name and glpi is not None:
+        raw_user_id = item.get("users_id", item.get("user_id", ""))
+        try:
+            user_id = int(raw_user_id)
+        except (TypeError, ValueError):
+            user_id = 0
+        if user_id > 0:
+            user_name = glpi.get_user_name(user_id)
+
     return {
         "id": item["id"],
         "name": item.get("name", "Sans nom"),
         "serial": item.get("serial", ""),
         "otherserial": item.get("otherserial", ""),
         "type_label": t["label"],
-        "location": item.get("completename", item.get("locations_name", "")),
+        "location": location,
+        "user_name": user_name,
         "url": f"{GLPI_URL}/{t['form']}?id={item['id']}",
     }
 
@@ -168,14 +266,16 @@ def apply_filters(assets, args):
         filtered = [a for a in filtered if args.lieu.lower() in (a.get("location","") or "").lower()]
     if args.nom:
         filtered = [a for a in filtered if args.nom.lower() in (a.get("name","") or "").lower()]
+    if args.user:
+        filtered = [a for a in filtered if args.user.lower() in (a.get("user_name", "") or "").lower()]
     return filtered
 
 # === LIST MODE ===
 def print_asset_list(assets):
-    print(f"\n{'ID':>5}  {'Type':<12} {'Nom':<22} {'S/N':<18} {'Lieu':<15}")
-    print("-" * 78)
+    print(f"\n{'ID':>5}  {'Type':<12} {'Nom':<22} {'S/N':<18} {'Lieu':<15} {'Utilisateur':<18}")
+    print("-" * 100)
     for a in assets:
-        print(f"{a['id']:>5}  {a['type_label']:<12} {a['name']:<22} {(a.get('serial','') or 'N/A'):<18} {(a.get('location','') or ''):<15}")
+        print(f"{a['id']:>5}  {a['type_label']:<12} {a['name']:<22} {(a.get('serial','') or 'N/A'):<18} {(a.get('location','') or ''):<15} {(a.get('user_name','') or ''):<18}")
     print(f"\n  Total: {len(assets)} asset(s)")
 
 # === MAIN ===
@@ -185,6 +285,8 @@ def main():
     parser.add_argument("--type", type=str, choices=["Computer", "Monitor"], help="Filtrer par type")
     parser.add_argument("--lieu", type=str, help="Filtrer par lieu (contient)")
     parser.add_argument("--nom", type=str, help="Filtrer par nom (contient)")
+    parser.add_argument("--user", type=str, help="Filtrer par utilisateur (contient)")
+    parser.add_argument("--rest-debug", action="store_true", help="Afficher les reponses REST sanitisees")
     parser.add_argument("--list", action="store_true", help="Lister les assets sans generer de PDF")
     parser.add_argument("--output", "-o", type=str, help="Nom du fichier PDF de sortie")
     args = parser.parse_args()
@@ -204,28 +306,28 @@ def main():
         print("\n[DEMO] Generation avec donnees fictives...\n")
         demo = [
             {"id":3,"name":"Automatisme-2","serial":"JXY51X2","type_label":"Ordinateur",
-             "location":"Andrezieux","otherserial":"",
+             "location":"Andrezieux","user_name":"Admin GLPI","otherserial":"",
              "url":f"{GLPI_URL}/front/computer.form.php?id=3"},
             {"id":5,"name":"PC-BUREAU-DG","serial":"ABC123DEF456","type_label":"Ordinateur",
-             "location":"Chambon","otherserial":"INV-2024-001",
+             "location":"Chambon","user_name":"Marie Durand","otherserial":"INV-2024-001",
              "url":f"{GLPI_URL}/front/computer.form.php?id=5"},
             {"id":12,"name":"DELL-U2722D","serial":"CN0F5XYZ789","type_label":"Ecran",
-             "location":"Chambon","otherserial":"INV-2024-012",
+             "location":"Chambon","user_name":"Atelier","otherserial":"INV-2024-012",
              "url":f"{GLPI_URL}/front/monitor.form.php?id=12"},
             {"id":8,"name":"PC-ATELIER-01","serial":"HJK789LMN012","type_label":"Ordinateur",
-             "location":"Sicaf","otherserial":"",
+             "location":"Sicaf","user_name":"Atelier","otherserial":"",
              "url":f"{GLPI_URL}/front/computer.form.php?id=8"},
             {"id":15,"name":"ECRAN-COMPTA-01","serial":"MNO456PQR789","type_label":"Ecran",
-             "location":"Andrezieux","otherserial":"INV-2024-015",
+             "location":"Andrezieux","user_name":"Compta","otherserial":"INV-2024-015",
              "url":f"{GLPI_URL}/front/monitor.form.php?id=15"},
             {"id":22,"name":"PC-DUNKERQUE-01","serial":"RST012UVW345","type_label":"Ordinateur",
-             "location":"Dunkerque","otherserial":"",
+             "location":"Dunkerque","user_name":"Dunkerque","otherserial":"",
              "url":f"{GLPI_URL}/front/computer.form.php?id=22"},
             {"id":7,"name":"PRECISION-7730","serial":"9XK4W53","type_label":"Ordinateur",
-             "location":"Chambon","otherserial":"INV-2024-003",
+             "location":"Chambon","user_name":"Informatique","otherserial":"INV-2024-003",
              "url":f"{GLPI_URL}/front/computer.form.php?id=7"},
             {"id":20,"name":"DELL-P2422H","serial":"FN0R2ABC123","type_label":"Ecran",
-             "location":"Dunkerque","otherserial":"",
+             "location":"Dunkerque","user_name":"Dunkerque","otherserial":"",
              "url":f"{GLPI_URL}/front/monitor.form.php?id=20"},
         ]
         # Apply filters on demo data
@@ -241,7 +343,7 @@ def main():
             print_asset_list(demo); return
         if not demo:
             print("[!] Aucun asset ne correspond aux filtres"); return
-        out = args.output or "/home/claude/glpi_etiquettes_DEMO.pdf"
+        out = args.output or os.path.join(os.path.dirname(os.path.abspath(__file__)), "glpi_etiquettes_DEMO.pdf")
         make_pdf(demo, out, logo)
         return
 
@@ -249,7 +351,7 @@ def main():
     print(f"\n  GLPI Label Generator - Genesienne Groupe")
     print(f"  Instance: {GLPI_URL}\n")
 
-    g = GLPI()
+    g = GLPI(rest_debug=args.rest_debug)
     try:
         g.start()
 
@@ -265,7 +367,7 @@ def main():
                 for type_key in types_to_fetch:
                     try:
                         item = g.get_one(type_key, item_id)
-                        assets.append(item_to_asset(item, type_key))
+                        assets.append(item_to_asset(item, type_key, g))
                         print(f"  [OK] {type_key} #{item_id}: {item.get('name','?')}")
                         found = True
                         break
@@ -278,7 +380,7 @@ def main():
             assets = []
             for type_key in types_to_fetch:
                 for item in g.get_all(type_key):
-                    assets.append(item_to_asset(item, type_key))
+                    assets.append(item_to_asset(item, type_key, g))
 
         # Apply filters
         assets = apply_filters(assets, args)
